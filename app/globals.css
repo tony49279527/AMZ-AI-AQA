@@ -3,93 +3,84 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Light theme: amzaiagent.com 风格 - 白/浅灰 + 柔和蓝，不重 */
+/* Amz AI Agent Design System */
 :root {
-  --background: 0 0% 99%;
-  --foreground: 220 15% 18%;
+  /* Slate-50 for light background */
+  --background: 210 40% 98%; 
+  /* Slate-900 for text/foreground */
+  --foreground: 222 47% 11%;
 
   --card: 0 0% 100%;
-  --card-foreground: 220 15% 18%;
+  --card-foreground: 222 47% 11%;
+  
   --popover: 0 0% 100%;
-  --popover-foreground: 220 15% 18%;
+  --popover-foreground: 222 47% 11%;
 
-  /* 柔和蓝 #4f8cff 左右，AI 科技风、不压 */
-  --primary: 218 92% 62%;
+  /* Primary Blue-Purple Gradient Base (fallback) */
+  --primary: 217 91% 60%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 220 15% 18%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 10% 48%;
-  --accent: 218 92% 62%;
-  --accent-foreground: 0 0% 100%;
+  /* Slate-100 for secondary backgrounds */
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222 47% 11%;
 
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 98%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
 
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
-  --ring: 218 92% 62%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222 47% 11%;
 
-  --chart-1: 218 92% 62%;
-  --chart-2: 200 80% 55%;
-  --chart-3: 160 55% 45%;
-  --chart-4: 45 90% 50%;
-  --chart-5: 270 65% 58%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 217 91% 60%; 
+
+  --radius: 1rem; /* 16px Rounded Corners */
+
+  /* Chart Colors */
+  --chart-1: 12 76% 61%;
+  --chart-2: 173 58% 39%;
+  --chart-3: 197 37% 24%;
+  --chart-4: 43 74% 66%;
+  --chart-5: 27 87% 67%;
+  
   --purple: 270 65% 58%;
-
-  --radius: 0.625rem;
-
-  --sidebar: 0 0% 99%;
-  --sidebar-foreground: 220 15% 18%;
-  --sidebar-primary: 218 92% 62%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 14% 96%;
-  --sidebar-accent-foreground: 220 15% 18%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-ring: 218 92% 62%;
 }
 
-/* Dark theme: 深灰 + 柔和蓝，不压 */
 .dark {
-  --background: 220 18% 8%;
-  --foreground: 220 10% 95%;
-  --card: 220 18% 11%;
-  --card-foreground: 220 10% 95%;
-  --popover: 220 18% 11%;
-  --popover-foreground: 220 10% 95%;
-  --primary: 218 92% 65%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 18% 16%;
-  --secondary-foreground: 220 10% 95%;
-  --muted: 220 18% 16%;
-  --muted-foreground: 220 10% 60%;
-  --accent: 218 92% 65%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 220 18% 22%;
-  --input: 220 18% 22%;
-  --ring: 218 92% 65%;
-  --chart-1: 218 92% 65%;
-  --chart-2: 200 80% 55%;
-  --chart-3: 160 55% 45%;
-  --chart-4: 45 90% 50%;
-  --chart-5: 270 65% 62%;
-  --purple: 270 65% 62%;
-  --sidebar: 220 18% 6%;
-  --sidebar-foreground: 220 10% 95%;
-  --sidebar-primary: 218 92% 65%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 18% 16%;
-  --sidebar-accent-foreground: 220 10% 95%;
-  --sidebar-border: 220 18% 22%;
-  --sidebar-ring: 218 92% 65%;
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 217 91% 60%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 224.3 76.3% 48%;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -114,19 +105,10 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
-  --color-purple: hsl(var(--purple));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
-  --color-sidebar-primary: hsl(var(--sidebar-primary));
-  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
-  --color-sidebar-accent: hsl(var(--sidebar-accent));
-  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
-  --color-sidebar-border: hsl(var(--sidebar-border));
-  --color-sidebar-ring: hsl(var(--sidebar-ring));
 }
 
 @layer base {
@@ -138,79 +120,53 @@
   }
 }
 
-/* 柔和蓝渐变，amzaiagent 科技风、不重 */
-.gradient-amazon-orange,
-.gradient-primary {
-  background: linear-gradient(
-    135deg,
-    rgba(79, 140, 255, 0.08) 0%,
-    rgba(79, 140, 255, 0.02) 50%,
-    transparent 100%
-  );
-}
-
-/* 报告卡片统一样式：背景、边框、圆角、阴影一致 */
-.card-report {
-  border-radius: var(--radius-lg);
-  border: 1px solid hsl(var(--border));
-  background-color: hsl(var(--card));
-  box-shadow: 0 1px 2px hsl(var(--border) / 0.5);
-  transition: box-shadow 0.2s, border-color 0.2s;
-}
-.card-report:hover {
-  border-color: hsl(var(--primary) / 0.3);
-  box-shadow: 0 2px 8px hsl(var(--border) / 0.6);
-}
-
-/* 主按钮：蓝到紫渐变，白字 */
+/* Custom Gradients & Effects */
 .gradient-btn-primary {
-  background: linear-gradient(90deg, #4f8cff 0%, #6b7cd6 50%, #7c3aed 100%);
-  color: #fff;
-  font-weight: 600;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  color: #ffffff;
   border: none;
-  box-shadow: 0 2px 8px rgba(79, 140, 255, 0.25), 0 2px 12px rgba(124, 58, 237, 0.15);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .gradient-btn-primary:hover {
-  background: linear-gradient(90deg, #5c9aff 0%, #7a8ce0 50%, #8b5cf6 100%);
-  box-shadow: 0 4px 12px rgba(79, 140, 255, 0.3), 0 4px 16px rgba(124, 58, 237, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  filter: brightness(1.1);
 }
 
-/* Oversized typography for emphasis */
-.text-mega {
-  font-size: clamp(4rem, 12vw, 10rem);
-  line-height: 0.9;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+/* Card Styling - Glassmorphism Light */
+.card-report {
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: all 0.3s ease;
 }
 
-/* Data metric styling - 柔和蓝 */
+.card-report:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border-color: #3b82f6;
+}
+
+/* Text Gradients */
+.text-gradient {
+  background: linear-gradient(135deg, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .metric-large {
   font-size: clamp(2rem, 6vw, 4rem);
   line-height: 1;
   font-weight: 700;
-  background: linear-gradient(135deg, #4f8cff 0%, #7ba8ff 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Animation for streaming text */
-@keyframes blink {
-  0%,
-  50% {
-    opacity: 1;
-  }
-  51%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.animate-blink {
-  animation: blink 1s infinite;
-}
-
-/* 隐藏横向/纵向滚动条，保留滚动能力 */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
