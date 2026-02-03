@@ -3,85 +3,88 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Tesla-inspired theme with pure black background and Tesla red accent */
+/* Light theme: amzaiagent.com 风格 - 白/浅灰 + 柔和蓝，不重 */
 :root {
-  /* Pure black background with Tesla red accent #E31937 */
-  --background: 0 0% 0%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 5%;
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 5%;
-  --popover-foreground: 0 0% 98%;
+  --background: 0 0% 99%;
+  --foreground: 220 15% 18%;
 
-  /* Tesla Red as primary: #E31937 */
-  --primary: 351 82% 47%;
-  --primary-foreground: 0 0% 98%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 15% 18%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 15% 18%;
 
-  --secondary: 0 0% 10%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 15%;
-  --muted-foreground: 0 0% 60%;
-  --accent: 351 82% 47%;
-  --accent-foreground: 0 0% 98%;
+  /* 柔和蓝 #4f8cff 左右，AI 科技风、不压 */
+  --primary: 218 92% 62%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 220 15% 18%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 10% 48%;
+  --accent: 218 92% 62%;
+  --accent-foreground: 0 0% 100%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
 
-  --border: 0 0% 20%;
-  --input: 0 0% 15%;
-  --ring: 351 82% 47%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 218 92% 62%;
 
-  --chart-1: 351 82% 47%;
-  --chart-2: 220 70% 50%;
-  --chart-3: 160 60% 45%;
+  --chart-1: 218 92% 62%;
+  --chart-2: 200 80% 55%;
+  --chart-3: 160 55% 45%;
   --chart-4: 45 90% 50%;
-  --chart-5: 330 70% 50%;
+  --chart-5: 270 65% 58%;
+  --purple: 270 65% 58%;
 
-  --radius: 0.75rem;
+  --radius: 0.625rem;
 
-  --sidebar: 0 0% 3%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-primary: 351 82% 47%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 0 0% 10%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 20%;
-  --sidebar-ring: 351 82% 47%;
+  --sidebar: 0 0% 99%;
+  --sidebar-foreground: 220 15% 18%;
+  --sidebar-primary: 218 92% 62%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 14% 96%;
+  --sidebar-accent-foreground: 220 15% 18%;
+  --sidebar-border: 220 13% 91%;
+  --sidebar-ring: 218 92% 62%;
 }
 
+/* Dark theme: 深灰 + 柔和蓝，不压 */
 .dark {
-  --background: 0 0% 0%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 5%;
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 5%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 351 82% 47%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 10%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 15%;
-  --muted-foreground: 0 0% 60%;
-  --accent: 351 82% 47%;
-  --accent-foreground: 0 0% 98%;
+  --background: 220 18% 8%;
+  --foreground: 220 10% 95%;
+  --card: 220 18% 11%;
+  --card-foreground: 220 10% 95%;
+  --popover: 220 18% 11%;
+  --popover-foreground: 220 10% 95%;
+  --primary: 218 92% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 18% 16%;
+  --secondary-foreground: 220 10% 95%;
+  --muted: 220 18% 16%;
+  --muted-foreground: 220 10% 60%;
+  --accent: 218 92% 65%;
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 20%;
-  --input: 0 0% 15%;
-  --ring: 351 82% 47%;
-  --chart-1: 351 82% 47%;
-  --chart-2: 220 70% 50%;
-  --chart-3: 160 60% 45%;
+  --border: 220 18% 22%;
+  --input: 220 18% 22%;
+  --ring: 218 92% 65%;
+  --chart-1: 218 92% 65%;
+  --chart-2: 200 80% 55%;
+  --chart-3: 160 55% 45%;
   --chart-4: 45 90% 50%;
-  --chart-5: 330 70% 50%;
-  --sidebar: 0 0% 3%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-primary: 351 82% 47%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 0 0% 10%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 20%;
-  --sidebar-ring: 351 82% 47%;
+  --chart-5: 270 65% 62%;
+  --purple: 270 65% 62%;
+  --sidebar: 220 18% 6%;
+  --sidebar-foreground: 220 10% 95%;
+  --sidebar-primary: 218 92% 65%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 18% 16%;
+  --sidebar-accent-foreground: 220 10% 95%;
+  --sidebar-border: 220 18% 22%;
+  --sidebar-ring: 218 92% 65%;
 }
 
 @theme inline {
@@ -111,6 +114,7 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
+  --color-purple: hsl(var(--purple));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -134,14 +138,41 @@
   }
 }
 
-/* Custom gradient for Tesla red with transparency for tech effect */
-.gradient-tesla-red {
+/* 柔和蓝渐变，amzaiagent 科技风、不重 */
+.gradient-amazon-orange,
+.gradient-primary {
   background: linear-gradient(
     135deg,
-    rgba(227, 25, 55, 0.15) 0%,
-    rgba(227, 25, 55, 0.05) 50%,
-    rgba(227, 25, 55, 0) 100%
+    rgba(79, 140, 255, 0.08) 0%,
+    rgba(79, 140, 255, 0.02) 50%,
+    transparent 100%
   );
+}
+
+/* 报告卡片统一样式：背景、边框、圆角、阴影一致 */
+.card-report {
+  border-radius: var(--radius-lg);
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--card));
+  box-shadow: 0 1px 2px hsl(var(--border) / 0.5);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.card-report:hover {
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 2px 8px hsl(var(--border) / 0.6);
+}
+
+/* 主按钮：蓝到紫渐变，白字 */
+.gradient-btn-primary {
+  background: linear-gradient(90deg, #4f8cff 0%, #6b7cd6 50%, #7c3aed 100%);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  box-shadow: 0 2px 8px rgba(79, 140, 255, 0.25), 0 2px 12px rgba(124, 58, 237, 0.15);
+}
+.gradient-btn-primary:hover {
+  background: linear-gradient(90deg, #5c9aff 0%, #7a8ce0 50%, #8b5cf6 100%);
+  box-shadow: 0 4px 12px rgba(79, 140, 255, 0.3), 0 4px 16px rgba(124, 58, 237, 0.2);
 }
 
 /* Oversized typography for emphasis */
@@ -152,12 +183,12 @@
   letter-spacing: -0.04em;
 }
 
-/* Data metric styling */
+/* Data metric styling - 柔和蓝 */
 .metric-large {
   font-size: clamp(2rem, 6vw, 4rem);
   line-height: 1;
   font-weight: 700;
-  background: linear-gradient(135deg, #e31937 0%, #ff4460 100%);
+  background: linear-gradient(135deg, #4f8cff 0%, #7ba8ff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -177,4 +208,13 @@
 
 .animate-blink {
   animation: blink 1s infinite;
+}
+
+/* 隐藏横向/纵向滚动条，保留滚动能力 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

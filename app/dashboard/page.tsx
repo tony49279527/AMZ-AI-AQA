@@ -2,14 +2,55 @@
 
 import { useEffect, useState } from "react"
 import { Navigation } from "@/components/navigation"
-import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
 import type { Report, SystemStatus } from "@/lib/types"
+import { cn } from "@/lib/utils"
+
+type TabId = "all" | "mine" | "featured"
+type ViewMode = "grid" | "list"
+type SortOption = "recent" | "oldest" | "name-asc" | "name-desc"
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "recent", label: "最近更新" },
+  { value: "oldest", label: "最早创建" },
+  { value: "name-asc", label: "按名称 A-Z" },
+  { value: "name-desc", label: "按名称 Z-A" },
+]
+
+// 精选报告占位图/色块 - 蓝/灰/青/紫，紫色更明显
+const featuredThumbs = [
+  "linear-gradient(135deg, #4f8cff 0%, #7ba8ff 100%)",
+  "linear-gradient(135deg, #5b6b7a 0%, #7d8f9e 100%)",
+  "linear-gradient(135deg, #4a9b8e 0%, #6bb8ad 100%)",
+  "linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)",
+]
+
+function formatReportDate(d: Date) {
+  const date = new Date(d)
+  const y = date.getFullYear()
+  const m = date.getMonth() + 1
+  const day = date.getDate()
+  return `${y}年${m}月${day}日`
+}
+
+function getChapterCount(report: Report) {
+  return report.chapters?.length ?? 0
+}
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  const [activeTab, setActiveTab] = useState<TabId>("all")
+  const [viewMode, setViewMode] = useState<ViewMode>("grid")
+  const [sortBy, setSortBy] = useState<SortOption>("recent")
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     backendConnected: true,
@@ -58,260 +99,341 @@ export default function DashboardPage() {
       updatedAt: new Date(Date.now() - 300000),
       chapters: [],
     },
+    {
+      id: "4",
+      title: "智能手表品类市场机会分析",
+      status: "completed",
+      progress: 100,
+      createdAt: new Date(Date.now() - 86400000 * 2),
+      updatedAt: new Date(Date.now() - 86400000 * 2),
+      chapters: [],
+    },
+    {
+      id: "5",
+      title: "家用清洁电器竞品对比",
+      status: "completed",
+      progress: 100,
+      createdAt: new Date(Date.now() - 86400000 * 5),
+      updatedAt: new Date(Date.now() - 86400000 * 5),
+      chapters: [],
+    },
   ])
 
-  const [stats, setStats] = useState({
-    totalReports: 24,
-    completedToday: 3,
-    activeAgents: 2,
-    avgGenerationTime: 45,
-  })
-
-  // Auto-refresh system status every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      setSystemStatus((prev) => ({
-        ...prev,
-        lastUpdated: new Date(),
-      }))
+      setSystemStatus((prev) => ({ ...prev, lastUpdated: new Date() }))
     }, 30000)
-
     return () => clearInterval(interval)
   }, [])
 
-  const actionCards = [
-    {
-      title: "新建报告",
-      subtitle: "New Report",
-      description: "上传文件开始生成分析报告",
-      icon: "fa-plus-circle",
-      href: "/report/new",
-      gradient: "gradient-tesla-red",
-    },
-    {
-      title: "查看历史",
-      subtitle: "History",
-      description: "浏览所有已生成的报告",
-      icon: "fa-clock-rotate-left",
-      href: "/reports",
-      gradient: "",
-    },
-    {
-      title: "系统设置",
-      subtitle: "Settings",
-      description: "配置Agent和LLM参数",
-      icon: "fa-gear",
-      href: "/settings",
-      gradient: "",
-    },
-    {
-      title: "帮助文档",
-      subtitle: "Help",
-      description: "查看使用指南和API文档",
-      icon: "fa-circle-question",
-      href: "/help",
-      gradient: "",
-    },
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "all", label: "全部" },
+    { id: "mine", label: "我的报告" },
+    { id: "featured", label: "精选报告" },
   ]
+
+  const filteredReports =
+    activeTab === "mine"
+      ? (user ? recentReports : [])
+      : activeTab === "featured"
+        ? recentReports.slice(0, 4)
+        : recentReports
+
+  const featuredReports = recentReports.slice(0, 4)
+  const sortedReports = [...filteredReports].sort((a, b) => {
+    switch (sortBy) {
+      case "recent":
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      case "oldest":
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      case "name-asc":
+        return a.title.localeCompare(b.title, "zh-CN")
+      case "name-desc":
+        return b.title.localeCompare(a.title, "zh-CN")
+      default:
+        return 0
+    }
+  })
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      <main className="container mx-auto px-6 py-24">
-        <section className="mb-12">
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
-            <div>
-              {user && (
-                <p className="text-primary mb-2 flex items-center gap-2">
-                  <i className="fas fa-user-circle"></i>
-                  欢迎回来，{user.name}
-                </p>
-              )}
-              <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold mb-4 text-balance">
-                智能报告
-                <br />
-                <span className="text-primary">生成系统</span>
-              </h1>
-              <p className="text-xl text-muted-foreground">Multi-Agent AI Report Generation Platform</p>
-            </div>
-
-            {/* Quick Stats - Bento style */}
-            <div className="grid grid-cols-2 gap-4">
-              <Card className="p-4 bg-card border-border">
-                <div className="metric-large text-3xl">{stats.totalReports}</div>
-                <div className="text-sm text-muted-foreground mt-1">总报告数</div>
-                <div className="text-xs text-muted-foreground">Total Reports</div>
-              </Card>
-              <Card className="p-4 bg-card border-border">
-                <div className="metric-large text-3xl">{stats.completedToday}</div>
-                <div className="text-sm text-muted-foreground mt-1">今日完成</div>
-                <div className="text-xs text-muted-foreground">Today</div>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* Action Cards - Bento Grid */}
-        <section className="mb-12">
-          <h2 className="text-3xl font-bold mb-6 flex items-center gap-3">
-            快速操作
-            <span className="text-lg text-muted-foreground font-normal">Quick Actions</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {actionCards.map((card, index) => (
-              <Link key={index} href={card.href}>
-                <Card
-                  className={`p-6 bg-card border-border hover:border-primary transition-all duration-300 cursor-pointer group h-full ${card.gradient}`}
+      <main className="pt-20 pb-12">
+        <div className="max-w-6xl mx-auto px-6">
+          {/* 筛选与操作栏 - NotebookLM 风格 */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/50 w-fit">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                    activeTab === tab.id
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  <div className="flex flex-col h-full">
-                    <div className="mb-4">
-                      <i
-                        className={`fas ${card.icon} text-4xl text-primary group-hover:scale-110 transition-transform`}
-                      ></i>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-2xl font-bold mb-1 group-hover:text-primary transition-colors">
-                        {card.title}
-                      </h3>
-                      <div className="text-xs text-muted-foreground mb-3">{card.subtitle}</div>
-                      <p className="text-sm text-muted-foreground">{card.description}</p>
-                    </div>
-                    <div className="mt-4">
-                      <i className="fas fa-arrow-right text-primary opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                    </div>
-                  </div>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </section>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-        {/* Recent Activity & System Status - Bento Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Recent Reports - Takes 2 columns */}
-          <Card className="lg:col-span-2 p-6 bg-card border-border">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold flex items-center gap-3">
-                  最近活动
-                  <span className="text-base text-muted-foreground font-normal">Recent Activity</span>
-                </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors text-sm",
+                    viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                  title="网格"
+                >
+                  <i className="fas fa-th-large" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors text-sm",
+                    viewMode === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                  title="列表"
+                >
+                  <i className="fas fa-list" />
+                </button>
               </div>
-              <Link href="/reports">
-                <Button variant="outline" size="sm" className="gap-2 bg-transparent">
-                  查看全部
-                  <i className="fas fa-arrow-right text-xs"></i>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                <SelectTrigger className="w-[130px] h-8 rounded-lg border-border bg-background text-sm">
+                  <SelectValue placeholder="排序" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SORT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Link href="/report/new">
+                <Button variant="gradient" size="default" className="gap-1.5 rounded-lg px-4 h-9">
+                  <i className="fas fa-plus text-xs" />
+                  新建报告
                 </Button>
               </Link>
             </div>
+          </div>
 
-            <div className="space-y-4">
-              {recentReports.map((report) => (
-                <Link key={report.id} href={`/report/${report.id}`}>
-                  <div className="p-4 bg-secondary/50 rounded-lg hover:bg-secondary transition-all border border-border hover:border-primary cursor-pointer group">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
-                          {report.title}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(report.createdAt).toLocaleString("zh-CN")}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {report.status === "completed" && (
-                          <span className="px-3 py-1 bg-primary/20 text-primary rounded-full text-xs font-medium">
-                            <i className="fas fa-check mr-1"></i>
-                            已完成
-                          </span>
+          {/* 精选报告 - 横向滚动，卡片统一淡色风格 */}
+          <section className="mb-10">
+            <div className="flex items-end justify-between mb-4">
+              <h2 className="text-xl font-bold text-foreground">精选报告</h2>
+              <Link
+                href="/reports"
+                className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
+              >
+                查看全部
+                <i className="fas fa-chevron-right text-xs" />
+              </Link>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 scrollbar-hide">
+              {featuredReports.map((report, i) => (
+                <Link
+                  key={report.id}
+                  href={`/report/${report.id}`}
+                  className="flex-shrink-0 w-[260px] min-h-[220px] flex flex-col overflow-hidden group card-report"
+                >
+                  <div
+                    className="h-24 w-full flex-shrink-0 rounded-t-[var(--radius-lg)]"
+                    style={{ background: featuredThumbs[i % featuredThumbs.length] }}
+                  />
+                  <div className="p-4 flex-1 flex flex-col min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div
+                        className={cn(
+                          "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
+                          i === 3 ? "bg-purple/20" : "bg-primary/15"
                         )}
-                        {report.status === "processing" && (
-                          <span className="px-3 py-1 bg-chart-2/20 text-chart-2 rounded-full text-xs font-medium">
-                            <i className="fas fa-spinner fa-spin mr-1"></i>
-                            生成中
-                          </span>
-                        )}
+                      >
+                        <i
+                          className={cn(
+                            "fas fa-file-lines text-[10px]",
+                            i === 3 ? "text-purple" : "text-primary"
+                          )}
+                        />
                       </div>
+                      <span
+                        className={cn(
+                          "text-xs truncate",
+                          i === 3 ? "text-purple font-medium" : "text-muted-foreground"
+                        )}
+                      >
+                        竞品分析
+                      </span>
                     </div>
-                    {report.status === "processing" && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                          <span>Progress</span>
-                          <span>{report.progress}%</span>
-                        </div>
-                        <div className="w-full bg-secondary rounded-full h-2">
-                          <div
-                            className="bg-primary h-2 rounded-full transition-all duration-500"
-                            style={{ width: `${report.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
+                    <h3 className="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary transition-colors flex-1">
+                      {report.title}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1 flex-shrink-0">
+                      {formatReportDate(report.updatedAt)} · {getChapterCount(report) || 11} 章节
+                    </p>
                   </div>
                 </Link>
               ))}
             </div>
-          </Card>
+          </section>
 
-          {/* System Status */}
-          <Card className="p-6 bg-card border-border">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold flex items-center gap-3 mb-1">系统状态</h2>
-              <p className="text-xs text-muted-foreground">System Status</p>
-            </div>
+          {/* 我的报告 - 网格/列表，卡片统一淡色风格 */}
+          <section>
+            <h2 className="text-xl font-bold text-foreground mb-4">我的报告</h2>
 
-            <div className="space-y-4">
-              {/* Backend Status */}
-              <div className="p-3 bg-secondary/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">后端服务</span>
-                  <div
-                    className={`w-2 h-2 rounded-full ${systemStatus.backendConnected ? "bg-primary animate-pulse" : "bg-destructive"}`}
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground">Backend Service</div>
+            {sortedReports.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-[hsl(var(--muted))]/40 py-16 text-center">
+                <p className="text-muted-foreground mb-2">
+                  {activeTab === "mine" && !user
+                    ? "请先登录后查看「我的报告」"
+                    : "暂无报告"}
+                </p>
+                {activeTab !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("all")}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    查看全部
+                  </button>
+                )}
+                {activeTab === "all" && (
+                  <Link href="/report/new" className="inline-block mt-2">
+                    <Button variant="gradient" size="sm" className="rounded-lg gap-1.5">
+                      <i className="fas fa-plus text-xs" />
+                      新建报告
+                    </Button>
+                  </Link>
+                )}
               </div>
+            ) : viewMode === "grid" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-stretch">
+                {/* 首卡：新建报告 - 与报告卡同壳同高 */}
+                <Link href="/report/new" className="min-h-[220px] flex">
+                  <div className="w-full min-h-[220px] flex flex-col items-center justify-center gap-2 cursor-pointer card-report border-dashed">
+                    <div className="w-12 h-12 rounded-full bg-primary/15 flex items-center justify-center group-hover:bg-primary/25 transition-colors">
+                      <i className="fas fa-plus text-xl text-primary" />
+                    </div>
+                    <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
+                      新建报告
+                    </span>
+                  </div>
+                </Link>
 
-              {/* LangGraph Status */}
-              <div className="p-3 bg-secondary/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">LangGraph</span>
-                  <div
-                    className={`w-2 h-2 rounded-full ${systemStatus.langGraphStatus === "online" ? "bg-primary animate-pulse" : "bg-destructive"}`}
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground">Workflow Engine</div>
+                {sortedReports.map((report, i) => {
+                  const icons = ["fa-chart-line", "fa-mobile-screen", "fa-video", "fa-wrench", "fa-handshake"]
+                  const icon = icons[i % icons.length]
+                  const usePurple = i === 2 || i === 4
+                  return (
+                    <div
+                      key={report.id}
+                      className="min-h-[220px] flex flex-col overflow-hidden group card-report"
+                    >
+                      {/* 与精选报告一致的顶部色条，仅用细条区分 */}
+                      <div
+                        className="h-1.5 w-full flex-shrink-0"
+                        style={{ background: featuredThumbs[i % featuredThumbs.length] }}
+                      />
+                      <Link href={`/report/${report.id}`} className="flex-1 flex flex-col p-4 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div
+                            className={cn(
+                              "w-9 h-9 rounded-full border flex items-center justify-center flex-shrink-0",
+                              usePurple ? "bg-purple/15 border-purple/30" : "bg-secondary border-border"
+                            )}
+                          >
+                            <i
+                              className={cn("fas text-sm", icon, usePurple ? "text-purple" : "text-primary")}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                            }}
+                            className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary flex-shrink-0"
+                          >
+                            <i className="fas fa-ellipsis-v text-xs" />
+                          </button>
+                        </div>
+                        <h3 className="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary transition-colors flex-1">
+                          {report.title}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1.5 flex-shrink-0">
+                          {formatReportDate(report.updatedAt)} · {getChapterCount(report) || 11} 章节
+                        </p>
+                        {report.status === "processing" && (
+                          <div className="mt-2 flex-shrink-0">
+                            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                              <span>生成中</span>
+                              <span>{report.progress}%</span>
+                            </div>
+                            <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary rounded-full transition-all"
+                                style={{ width: `${report.progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </Link>
+                    </div>
+                  )
+                })}
               </div>
-
-              {/* Active Agents */}
-              <div className="p-3 bg-secondary/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">活跃Agent</span>
-                  <span className="text-2xl font-bold text-primary">{stats.activeAgents}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {systemStatus.agents.filter((a) => a.status === "running").length} running /{" "}
-                  {systemStatus.agents.length} total
-                </div>
+            ) : (
+              <div className="space-y-2">
+                <Link href="/report/new" className="flex items-center gap-3 p-4 rounded-xl card-report border-dashed">
+                  <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+                    <i className="fas fa-plus text-lg text-primary" />
+                  </div>
+                  <span className="font-medium text-sm text-foreground">新建报告</span>
+                </Link>
+                {sortedReports.map((report, i) => (
+                  <Link key={report.id} href={`/report/${report.id}`}>
+                    <div className="flex items-center gap-3 p-4 rounded-xl card-report">
+                      <div
+                        className={cn(
+                          "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 border border-border",
+                          i === 2 || i === 4 ? "bg-purple/15" : "bg-primary/15"
+                        )}
+                      >
+                        <i className={cn("fas fa-file-lines text-sm", i === 2 || i === 4 ? "text-purple" : "text-primary")} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm text-foreground truncate">{report.title}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatReportDate(report.updatedAt)} · {getChapterCount(report) || 11} 章节
+                        </p>
+                      </div>
+                      {report.status === "completed" && (
+                        <span className="px-2.5 py-1 rounded-full bg-primary/20 text-primary text-xs font-medium flex-shrink-0">
+                          已完成
+                        </span>
+                      )}
+                      {report.status === "processing" && (
+                        <span className="px-2.5 py-1 rounded-full bg-chart-2/20 text-chart-2 text-xs font-medium flex items-center gap-1 flex-shrink-0">
+                          <i className="fas fa-spinner fa-spin" />
+                          {report.progress}%
+                        </span>
+                      )}
+                      <i className="fas fa-chevron-right text-muted-foreground text-xs flex-shrink-0" />
+                    </div>
+                  </Link>
+                ))}
               </div>
-
-              {/* Avg Generation Time */}
-              <div className="p-3 bg-secondary/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">平均生成时间</span>
-                  <span className="text-2xl font-bold text-primary">{stats.avgGenerationTime}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">minutes per report</div>
-              </div>
-
-              {/* Last Updated */}
-              <div className="text-xs text-muted-foreground text-center pt-2 border-t border-border">
-                <i className="fas fa-clock mr-1"></i>
-                最后更新: {systemStatus.lastUpdated.toLocaleTimeString("zh-CN")}
-              </div>
-            </div>
-          </Card>
+            )}
+          </section>
         </div>
       </main>
     </div>

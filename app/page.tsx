@@ -55,14 +55,14 @@ export default function HomePage() {
           // Logged in user buttons
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/dashboard">
-              <Button size="lg" className="text-lg px-8 py-6 gap-3 w-full sm:w-auto">
+              <Button variant="gradient" size="lg" className="text-lg px-8 py-6 gap-3 rounded-full w-full sm:w-auto">
                 <i className="fas fa-rocket"></i>
                 进入仪表板
-                <span className="text-xs opacity-70">Dashboard</span>
+                <span className="text-xs opacity-90">Dashboard</span>
               </Button>
             </Link>
             <Link href="/report/new">
-              <Button size="lg" variant="outline" className="text-lg px-8 py-6 gap-3 bg-transparent w-full sm:w-auto">
+              <Button size="lg" variant="outline" className="text-lg px-8 py-6 gap-3 rounded-full bg-transparent w-full sm:w-auto">
                 <i className="fas fa-plus-circle"></i>
                 新建报告
                 <span className="text-xs opacity-70">New Report</span>
@@ -73,14 +73,14 @@ export default function HomePage() {
           // Guest user buttons
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/login">
-              <Button size="lg" className="text-lg px-8 py-6 gap-3 w-full sm:w-auto">
+              <Button variant="gradient" size="lg" className="text-lg px-8 py-6 gap-3 rounded-full w-full sm:w-auto">
                 <i className="fas fa-sign-in-alt"></i>
                 登录系统
-                <span className="text-xs opacity-70">Sign In</span>
+                <span className="text-xs opacity-90">Sign In</span>
               </Button>
             </Link>
             <Link href="/register">
-              <Button size="lg" variant="outline" className="text-lg px-8 py-6 gap-3 bg-transparent w-full sm:w-auto">
+              <Button size="lg" variant="outline" className="text-lg px-8 py-6 gap-3 rounded-full bg-transparent w-full sm:w-auto">
                 <i className="fas fa-user-plus"></i>
                 注册账号
                 <span className="text-xs opacity-70">Register</span>
