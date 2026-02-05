@@ -31,110 +31,48 @@ export function Navigation() {
   }
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-[1280px] mx-auto px-6 py-3">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100">
+      <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 bg-primary/10 flex items-center justify-center rounded-xl">
-              <i className="fas fa-brain text-primary text-sm"></i>
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 flex items-center justify-center rounded-lg">
+              <i className="fas fa-brain text-white text-[14px]"></i>
             </div>
-            <span className="font-bold text-lg text-foreground tracking-tight group-hover:text-primary transition-colors">
-              智能报告生成
+            <span className="font-bold text-xl text-slate-900 tracking-tight">
+              AI Agent Report
             </span>
           </Link>
 
-          <div className="flex items-center gap-2">
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 text-sm font-medium h-[37px]",
-                  pathname === link.href || pathname?.startsWith(link.href)
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-secondary text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <i className={`fas ${link.icon} text-xs`}></i>
-                <span className="hidden md:inline">{link.label}</span>
-              </Link>
-            ))}
-
-            <div className="w-px h-6 bg-border mx-2" />
-
-            {mounted && (
-              <button
-                type="button"
-                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-                className="w-9 h-9 flex items-center justify-center rounded-2xl hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-                title={resolvedTheme === "dark" ? "切换为浅色" : "切换为深色"}
-              >
-                <i className={cn("fas text-xs", resolvedTheme === "dark" ? "fa-sun" : "fa-moon")} />
-              </button>
-            )}
-
-            <div className="pl-2">
-              {isLoading ? (
-                <div className="w-9 h-9 rounded-2xl bg-secondary animate-pulse" />
-              ) : user ? (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-2xl hover:bg-secondary transition-colors border border-transparent hover:border-border"
-                  >
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-primary-foreground text-sm font-bold shadow-sm">
-                      {user.name.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="hidden md:block text-sm font-medium max-w-[100px] truncate">
-                      {user.name}
-                    </span>
-                    <i
-                      className={cn("fas fa-chevron-down text-[10px] text-muted-foreground transition-transform mx-1", showUserMenu && "rotate-180")}
-                    />
-                  </button>
-
-                  {/* Dropdown Menu */}
-                  {showUserMenu && (
-                    <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-2xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 p-1">
-                      <div className="px-3 py-2.5 border-b border-border/50 mb-1">
-                        <div className="text-sm font-medium truncate">{user.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{user.email}</div>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <Link
-                          href="/settings"
-                          onClick={() => setShowUserMenu(false)}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-secondary transition-colors w-full text-sm font-medium"
-                        >
-                          <i className="fas fa-user-circle text-muted-foreground w-5 text-center" />
-                          <span>个人设置</span>
-                        </Link>
-                        <button
-                          onClick={handleLogout}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-destructive/10 text-destructive transition-colors w-full text-sm font-medium text-left"
-                        >
-                          <i className="fas fa-sign-out-alt w-5 text-center" />
-                          <span>退出登录</span>
-                        </button>
-                      </div>
-                    </div>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-6">
+              {links.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "text-[14px] font-semibold transition-colors",
+                    pathname === link.href || pathname?.startsWith(link.href)
+                      ? "text-blue-600"
+                      : "text-slate-500 hover:text-slate-900",
                   )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Link href="/login">
-                    <Button variant="ghost" size="sm" className="h-[37px] px-3 text-sm rounded-md">
-                      登录
-                    </Button>
-                  </Link>
-                  <Link href="/register">
-                    <Button variant="gradient" size="sm" className="h-[37px] px-4 text-sm rounded-md">
-                      注册
-                    </Button>
-                  </Link>
-                </div>
-              )}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </div>
+
+            <div className="w-px h-4 bg-slate-200 mx-2" />
+
+            {user ? (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-[13px] font-bold border border-slate-200">
+                  {user.name.charAt(0).toUpperCase()}
+                </div>
+                <button onClick={handleLogout} className="text-[13px] font-bold text-red-500 hover:underline">退出</button>
+              </div>
+            ) : (
+              <Link href="/login" className="text-[14px] font-bold text-blue-600">登录</Link>
+            )}
           </div>
         </div>
       </div>
