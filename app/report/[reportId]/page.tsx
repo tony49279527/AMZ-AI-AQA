@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -15,17 +15,30 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 export default function ReportDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const reportId = params.reportId as string
-  const [activeTab, setActiveTab] = useState("report")
+
+  // Initialize activeTab from URL query param or default to "report"
+  const initialTab = searchParams.get("tab") || "report"
+  const [activeTab, setActiveTab] = useState(initialTab)
+
   const [activeSection, setActiveSection] = useState("")
   const [isScrolled, setIsScrolled] = useState(false)
   const [markdown, setMarkdown] = useState("")
   const [loading, setLoading] = useState(true)
-  const [questionInput, setQuestionInput] = useState("")
-  const [isTyping, setIsTyping] = useState(false)
+
+  const [showContext, setShowContext] = useState(true)
 
   // 动态从 Markdown 提取目录章节 (提取 ## 和 ### 级别的标题)
   const [sections, setSections] = useState<{ id: string; title: string; level: number }[]>([])
+
+  // Update activeTab if URL changes (e.g. back/forward navigation)
+  useEffect(() => {
+    const tab = searchParams.get("tab")
+    if (tab) {
+      setActiveTab(tab)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     async function fetchReport() {
@@ -90,63 +103,56 @@ export default function ReportDetailPage() {
     }
   }
 
-  const qaSessions = [
-    {
-      question: "这款猫砂盆对于大体型猫（如缅因猫）友好吗？",
-      answer:
-        "非常友好。根据产品规格，入口宽达16.5英寸，且为开放式设计，直到33磅（约15kg）的猫咪都能轻松进出。用户评论中也有多位缅因猫家长反馈使用体验良好，没有空间局促感。",
-      timestamp: new Date("2024-03-10T14:30:00"),
-    },
-    {
-      question: "是否支持5G WiFi连接？",
-      answer:
-        "不支持。该设备目前仅支持2.4GHz WiFi频段。如果您的路由器是双频合一的，建议在配网时临时关闭5G频段，或者开启专门的IoT客访网络（仅2.4G）进行连接。",
-      timestamp: new Date("2024-03-09T09:15:00"),
-    },
-    {
-      question: "清理频率如何设置最合理？",
-      answer:
-        "建议根据猫咪数量调整：单猫家庭可设置为每次如厕后延迟5-10分钟清理；多猫家庭建议缩短至3-5分钟。APP支持自定义清理时间表，您也可以设置夜间静音模式避免打扰休息。",
-      timestamp: new Date("2024-03-08T16:20:00"),
-    },
-    {
-      question: "My cat is scared of the automatic cleaning sound. What should I do?",
-      answer: "初始几天请关闭“自动清洁”，改为“手动按键”。让猫先熟悉机器。",
-      timestamp: new Date("2024-03-07T10:00:00"),
-    },
-    {
-      question: "How often should I completely replace all the litter?",
-      answer: "建议每45-60天完全清空并彻底刷洗一次滚筒。",
-      timestamp: new Date("2024-03-06T11:00:00"),
-    },
-    {
-      question: "Can I use this for kittens under 3 months old?",
-      answer: "请启用APP中的“幼猫模式”，以确保超轻体重的极致感应安全。",
-      timestamp: new Date("2024-03-05T12:00:00"),
-    },
-  ]
 
-  const dataSources = [
-    { type: "亚马逊数据", name: "Amazon Product Page (B0FMK94VY4)", size: "1.2MB", count: null, icon: "fa-shopping-cart" },
-    { type: "亚马逊数据", name: "Competitor Analysis - Mintakawa", size: "0.8MB", count: null, icon: "fa-chart-line" },
-    { type: "上传文件", name: "User Reviews Export (2024-Q1)", size: "4.5MB", count: 452, icon: "fa-file-excel" },
-    { type: "YouTube数据", name: "YouTube Review - TechCat", size: null, count: 1, icon: "fa-youtube" },
-    { type: "上传文件", name: "Return Reason Statistics.csv", size: "128KB", count: 1203, icon: "fa-file-csv" },
-  ]
 
-  const quickQuestions = [
-    "总结一下主要竞争优势",
-    "市场份额对比如何？",
-    "定价策略有什么区别？",
-    "客户反馈的关键点是什么？",
-  ]
+  // 报告创建时的配置信息
+  const reportConfig = {
+    coreAsins: ["B0FMK94VY4", "B0FMK95ABC"],
+    competitorAsins: ["B09XYZ1234", "B09ABC5678", "B09DEF9012", "B09GHI3456", "B09JKL7890"],
+    marketplace: "US",
+    language: "中文",
+    llmModel: "Claude 3.5 Sonnet",
+    websiteCount: 10,
+    youtubeCount: 10,
+    title: "AI竞品分析报告-猫砂盆-C4.5",
+    createdAt: "2024-09-15",
+  }
 
-  const chatHistory = [
-    { id: "1", title: "AI竞品分析报告-猫砂盆-C4.5", status: "活跃中", time: "当前" },
-    { id: "2", title: "Tesla vs 蔚来竞品分析", status: "3小时前", time: "3小时前" },
-    { id: "3", title: "iPhone 15 Pro 对比分析", status: "昨天", time: "昨天" },
-    { id: "4", title: "抖音市场策略讨论", status: "4小时前", time: "4小时前" },
-  ]
+  const [dataFiles, setDataFiles] = useState([
+    { id: "1", category: "亚马逊数据", name: "Amazon Product Page (B0FMK94VY4)", size: "1.2MB", icon: "fa-shopping-cart text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
+    { id: "2", category: "亚马逊数据", name: "Amazon Product Page (B0FMK95ABC)", size: "0.9MB", icon: "fa-shopping-cart text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
+    { id: "3", category: "竞品数据", name: "Competitor Analysis - B09XYZ1234", size: "0.8MB", icon: "fa-chart-line text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
+    { id: "4", category: "竞品数据", name: "Competitor Analysis - B09ABC5678", size: "0.7MB", icon: "fa-chart-line text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
+    { id: "5", category: "网站参考", name: "Google Search Results (10 pages)", size: "3.2MB", icon: "fa-globe text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
+    { id: "6", category: "YouTube", name: "YouTube Reviews (10 videos)", size: "2.1MB", icon: "fa-youtube text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
+    { id: "7", category: "上传文件", name: "Return Reason Statistics Q3.csv", size: "128KB", icon: "fa-file-csv text-slate-400", addedAt: "2024-09-15", source: "用户上传" },
+    { id: "8", category: "上传文件", name: "店铺受众画像-2024.pdf", size: "2.4MB", icon: "fa-file-pdf text-slate-400", addedAt: "2024-09-15", source: "用户上传" },
+  ])
+
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  const handleNewFileUpload = (files: FileList | null) => {
+    if (!files) return
+    const newFiles = Array.from(files).map((file, i) => ({
+      id: `new-${Date.now()}-${i}`,
+      category: "上传文件" as const,
+      name: file.name,
+      size: file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)}MB` : `${(file.size / 1024).toFixed(0)}KB`,
+      icon: file.name.endsWith(".csv") ? "fa-file-csv text-slate-400"
+        : file.name.endsWith(".xlsx") || file.name.endsWith(".xls") ? "fa-file-excel text-slate-400"
+          : file.name.endsWith(".pdf") ? "fa-file-pdf text-slate-400"
+            : "fa-file text-slate-400",
+      addedAt: new Date().toISOString().split("T")[0],
+      source: "用户上传",
+    }))
+    setDataFiles(prev => [...prev, ...newFiles])
+    setShowUploadModal(false)
+  }
+
+
+
+
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -306,6 +312,17 @@ export default function ReportDetailPage() {
                           blockquote: ({ ...props }) => (
                             <blockquote className="border-l-4 border-blue-500 bg-blue-50/10 p-8 rounded-r-xl my-8 italic text-slate-700" {...props} />
                           ),
+                          code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { className?: string }) => {
+                            const isInline = !className
+                            return isInline ? (
+                              <code className="bg-slate-100 text-blue-700 px-1.5 py-0.5 rounded text-[0.9em] font-mono" {...props}>{children}</code>
+                            ) : (
+                              <code className={cn("block bg-slate-900 text-slate-100 p-6 rounded-xl my-6 overflow-x-auto text-sm font-mono leading-relaxed", className)} {...props}>{children}</code>
+                            )
+                          },
+                          pre: ({ ...props }) => (
+                            <pre className="bg-slate-900 rounded-xl my-6 overflow-x-auto" {...props} />
+                          ),
                         }}
                       >
                         {markdown}
@@ -318,208 +335,200 @@ export default function ReportDetailPage() {
           </main>
         </TabsContent>
 
-        <TabsContent value="qa" className="focus-visible:outline-none focus-visible:ring-0 m-0 pt-[160px]">
-          <div className="h-[calc(100vh-160px)] flex bg-slate-50 overflow-hidden">
-            {/* Left Sidebar - Chat History */}
-            <aside className="hidden xl:flex w-[280px] flex-col bg-white border-r border-slate-200 p-6 no-print">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">聊天历史</h3>
-                <i className="fas fa-chevron-left text-slate-400 cursor-pointer"></i>
+        <TabsContent value="qa" className="focus-visible:outline-none focus-visible:ring-0 m-0 pt-[110px]">
+          <div className="h-[calc(100vh-110px)] flex flex-col items-center justify-center bg-slate-50">
+            <div className="text-center max-w-md px-6">
+              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i className="fas fa-robot text-4xl text-blue-600"></i>
               </div>
-              <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2">
-                {chatHistory.map((chat) => (
-                  <div
-                    key={chat.id}
-                    className={cn(
-                      "p-4 rounded-xl border transition-all cursor-pointer group",
-                      chat.status === "活跃中"
-                        ? "bg-blue-600/5 border-blue-200 ring-1 ring-blue-100"
-                        : "bg-white border-slate-100 hover:border-blue-100 hover:bg-slate-50"
-                    )}
-                  >
-                    <div className="font-bold text-[13px] text-slate-800 mb-1 truncate group-hover:text-blue-600">{chat.title}</div>
-                    <div className="text-[11px] text-slate-400 font-medium">{chat.status}</div>
-                  </div>
-                ))}
-              </div>
-            </aside>
-
-            {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col bg-white">
-              {/* Chat Header */}
-              <div className="px-8 py-6 border-b border-slate-100 flex flex-col items-center">
-                <h2 className="text-xl font-bold text-slate-900 mb-1">AI竞品分析报告-猫砂盆-C4.5</h2>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">智能问答 | AI Q&A</span>
-                </div>
-                <div className="absolute right-8 top-6">
-                  <Button variant="outline" size="sm" className="gap-2 text-[12px] bg-transparent border-slate-200 hover:bg-blue-50 transition-all">
-                    <i className="fas fa-download text-slate-400"></i>
-                    导出对话
-                  </Button>
-                </div>
-              </div>
-
-              {/* Chat Content */}
-              <div className="flex-1 overflow-y-auto p-10 bg-slate-50/20">
-                <div className="max-w-[900px] mx-auto space-y-10">
-                  <div className="text-center">
-                    <div className="inline-flex items-center gap-3 px-6 py-2 bg-slate-100/80 rounded-full text-[13px] text-slate-500 font-medium">
-                      <i className="fas fa-info-circle text-blue-500"></i>
-                      欢迎使用智能问答系统！我已加载您的报告，可以回答关于报告内容的任何问题。
-                    </div>
-                  </div>
-
-                  {/* Messages */}
-                  <div className="space-y-8">
-                    {qaSessions.map((qa, idx) => (
-                      <div key={idx} className="space-y-4">
-                        <div className="flex justify-end">
-                          <div className="max-w-[80%] bg-[#2563eb] text-white px-5 py-3 rounded-2xl rounded-tr-none shadow-sm">
-                            <p className="text-[15px] leading-relaxed">{qa.question}</p>
-                          </div>
-                        </div>
-                        <div className="flex justify-start">
-                          <div className="max-w-[85%] bg-white border border-slate-100 px-5 py-4 rounded-2xl rounded-tl-none shadow-sm">
-                            <div className="text-[15px] leading-relaxed text-slate-700">{qa.answer}</div>
-                            <div className="mt-4 flex items-center justify-between border-t border-slate-50 pt-2">
-                              <p className="text-[10px] text-slate-400 flex items-center gap-1.5 font-medium">
-                                <i className="fas fa-shield-alt text-green-500 transition-colors"></i>
-                                基于报告原文内容回答，答案仅供参考
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Chat Footer */}
-              <div className="px-8 py-6 border-t border-slate-100 bg-white">
-                <div className="max-w-[900px] mx-auto">
-                  {/* Quick Questions */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {quickQuestions.map((q, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setQuestionInput(q)}
-                        className="px-4 py-1.5 rounded-lg bg-slate-50 border border-slate-100 text-[12px] font-bold text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-all flex items-center gap-2"
-                      >
-                        <i className="fas fa-lightbulb text-orange-400"></i>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Input Area */}
-                  <div className="relative group">
-                    <textarea
-                      value={questionInput}
-                      onChange={(e) => setQuestionInput(e.target.value)}
-                      placeholder="输入您的问题... (Ctrl+Enter 发送)"
-                      rows={1}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all pr-32 resize-none overflow-hidden h-14"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && e.ctrlKey) {
-                          setQuestionInput("")
-                          setIsTyping(true)
-                          setTimeout(() => setIsTyping(false), 2000)
-                        }
-                      }}
-                    />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-3">
-                      <i className="fas fa-paperclip text-slate-400 cursor-pointer hover:text-slate-600 transition-colors"></i>
-                      <button
-                        onClick={() => {
-                          setQuestionInput("")
-                          setIsTyping(true)
-                          setTimeout(() => setIsTyping(false), 2000)
-                        }}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2"
-                      >
-                        <i className="fas fa-paper-plane"></i>
-                        发送
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-3">AI 智能问答助手</h2>
+              <p className="text-slate-500 mb-8">
+                基于当前报告内容，为您提供深入的即时问答服务。支持多轮对话、引用来源追踪。
+              </p>
+              <Button
+                onClick={() => router.push(`/chat/${reportId}`)}
+                size="lg"
+                className="w-full text-lg h-12 gap-2 shadow-lg hover:shadow-xl transition-all"
+              >
+                <i className="fas fa-comments"></i>
+                开始智能对话
+              </Button>
             </div>
-
-            {/* Right Sidebar - Context */}
-            <aside className="hidden xl:flex w-[300px] flex-col bg-slate-50 border-l border-slate-200 p-6 no-print overflow-y-auto custom-scrollbar">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">报告上下文</h3>
-                <i className="fas fa-chevron-right text-slate-400"></i>
-              </div>
-
-              <div className="space-y-8">
-                <section>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3">当前报告</label>
-                  <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                    <div className="font-bold text-[14px] text-slate-800 leading-snug">AI竞品分析报告-猫砂盆-C4.5</div>
-                  </div>
-                </section>
-
-                <section>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3">可用章节</label>
-                  <div className="space-y-2">
-                    {sections.filter(s => s.level === 2).map((section) => (
-                      <div
-                        key={section.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all cursor-pointer group"
-                      >
-                        <span className="text-[13px] font-bold text-slate-600 group-hover:text-blue-600">{section.title}</span>
-                        <i className="fas fa-chevron-right text-[10px] text-slate-300 group-hover:text-blue-400"></i>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section>
-                  <div className="p-5 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-100 relative overflow-hidden group hover:scale-[1.02] transition-transform">
-                    <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all"></div>
-                    <div className="flex items-start gap-3 relative z-10">
-                      <i className="fas fa-lightbulb text-yellow-300 mt-1"></i>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">提示</p>
-                        <p className="text-[13px] leading-relaxed font-semibold">
-                          您可以询问关于报告中任何章节的问题，AI 会引用相关章节内容为您解答。
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            </aside>
           </div>
         </TabsContent>
 
         <TabsContent value="sources" className="focus-visible:outline-none focus-visible:ring-0 m-0 pt-[160px]">
-          <main className="max-w-7xl mx-auto px-6 pb-16">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-10">
-              <div className="flex items-center gap-3 mb-10">
-                <div className="w-1.5 h-8 bg-blue-600 rounded-full"></div>
-                <h2 className="text-3xl font-bold text-slate-900 tracking-tight">数据来源</h2>
+          <main className="max-w-7xl mx-auto px-6 pb-16 space-y-8">
+
+            {/* ── Section 1: 报告配置 ── */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-8 bg-blue-600 rounded-full"></div>
+                  <h2 className="text-2xl font-bold text-slate-900 tracking-tight">报告配置</h2>
+                </div>
+                <span className="text-sm text-slate-400">创建于 {reportConfig.createdAt}</span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {dataSources.map((source, idx) => (
-                  <div key={idx} className="flex flex-col p-6 rounded-xl bg-slate-50 border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group">
-                    <div className="flex items-start justify-between mb-6">
-                      <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                        <i className={cn("fas text-xl", source.icon)}></i>
-                      </div>
-                    </div>
-                    <div className="mb-6">
-                      <div className="font-bold text-slate-900 mb-1 truncate">{source.name}</div>
-                      <div className="text-xs text-slate-500 font-medium px-2 py-0.5 bg-slate-200/50 rounded inline-block">{source.type}</div>
-                    </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-xs text-slate-400 font-medium mb-1.5">市场站点</div>
+                  <div className="font-bold text-slate-900 text-lg">🇺🇸 {reportConfig.marketplace}</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-xs text-slate-400 font-medium mb-1.5">报告语言</div>
+                  <div className="font-bold text-slate-900 text-lg">{reportConfig.language}</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-xs text-slate-400 font-medium mb-1.5">LLM 模型</div>
+                  <div className="font-bold text-slate-900 text-sm">{reportConfig.llmModel}</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-xs text-slate-400 font-medium mb-1.5">参考数据</div>
+                  <div className="font-bold text-slate-900 text-sm">{reportConfig.websiteCount} 网站 · {reportConfig.youtubeCount} 视频</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100">
+                  <div className="text-xs text-slate-500 font-semibold mb-2">核心产品 ASIN ({reportConfig.coreAsins.length})</div>
+                  <div className="flex flex-wrap gap-2">
+                    {reportConfig.coreAsins.map((asin) => (
+                      <span key={asin} className="px-3 py-1.5 bg-white rounded-lg text-sm font-mono text-slate-700 border border-slate-200 shadow-sm">{asin}</span>
+                    ))}
                   </div>
-                ))}
+                </div>
+                <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100">
+                  <div className="text-xs text-slate-500 font-semibold mb-2">竞品 ASIN ({reportConfig.competitorAsins.length})</div>
+                  <div className="flex flex-wrap gap-2">
+                    {reportConfig.competitorAsins.map((asin) => (
+                      <span key={asin} className="px-3 py-1.5 bg-white rounded-lg text-sm font-mono text-slate-700 border border-slate-200 shadow-sm">{asin}</span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* ── Section 2: 数据文件列表 ── */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-8 bg-blue-600 rounded-full"></div>
+                  <h2 className="text-2xl font-bold text-slate-900 tracking-tight">数据文件</h2>
+                  <span className="text-sm text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">{dataFiles.length} 个文件</span>
+                </div>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  <i className="fas fa-plus text-xs"></i>
+                  新增文件
+                </button>
+              </div>
+
+              {/* File Table */}
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">文件名</th>
+                      <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">类型</th>
+                      <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">大小</th>
+                      <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">添加日期</th>
+                      <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">来源</th>
+                      <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dataFiles.map((file) => (
+                      <tr key={file.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                              <i className={cn("fas text-sm", file.icon)}></i>
+                            </div>
+                            <span className="font-medium text-sm text-slate-800 truncate max-w-[280px]">{file.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={cn(
+                            "text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600"
+                          )}>
+                            {file.category}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-500">{file.size}</td>
+                        <td className="px-5 py-4 text-sm text-slate-500">{file.addedAt}</td>
+                        <td className="px-5 py-4">
+                          <span className={cn(
+                            "text-xs font-medium",
+                            file.source === "用户上传" ? "text-purple-500" : "text-slate-400"
+                          )}>
+                            {file.source}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          {file.source === "用户上传" && (
+                            <button
+                              onClick={() => setDataFiles(prev => prev.filter(f => f.id !== file.id))}
+                              className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                              title="删除文件"
+                            >
+                              <i className="fas fa-trash-can text-xs text-red-400"></i>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ── Upload Modal ── */}
+            {showUploadModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                    <h3 className="text-lg font-bold text-slate-900">新增数据文件</h3>
+                    <button onClick={() => setShowUploadModal(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors">
+                      <i className="fas fa-xmark text-slate-400"></i>
+                    </button>
+                  </div>
+                  <div className="p-6">
+                    <p className="text-sm text-slate-500 mb-4">上传新的退货报告、评论数据或其他产品相关文件，用于追加分析。</p>
+                    <div
+                      className={cn(
+                        "border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer",
+                        dragOver ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-slate-50"
+                      )}
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setDragOver(false); handleNewFileUpload(e.dataTransfer.files) }}
+                      onClick={() => document.getElementById("new-file-input")?.click()}
+                    >
+                      <input
+                        id="new-file-input"
+                        type="file"
+                        className="hidden"
+                        multiple
+                        accept=".csv,.xlsx,.xls,.pdf,.doc,.docx,.txt,.json"
+                        onChange={(e) => handleNewFileUpload(e.target.files)}
+                      />
+                      <i className={cn("fas fa-cloud-arrow-up text-4xl mb-3", dragOver ? "text-blue-500" : "text-slate-300")}></i>
+                      <p className="font-semibold text-slate-700 mb-1">拖放文件到这里，或点击选择</p>
+                      <p className="text-xs text-slate-400">支持 CSV, XLSX, PDF, DOC, DOCX, TXT, JSON</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+                    <button onClick={() => setShowUploadModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </main>
         </TabsContent>
       </Tabs>

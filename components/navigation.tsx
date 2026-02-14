@@ -4,7 +4,6 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
-import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 
@@ -12,23 +11,18 @@ export function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const { user, logout, isLoading } = useAuth()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => setMounted(true), [])
 
   const links = [
-    { href: "/dashboard", label: "仪表板", icon: "fa-chart-line" },
+    { href: "/dashboard", label: "全部报告", icon: "fa-chart-line" },
     { href: "/report/new", label: "新建报告", icon: "fa-plus-circle" },
     { href: "/settings", label: "系统设置", icon: "fa-gear" },
   ]
 
-  const handleLogout = () => {
-    logout()
-    router.push("/")
-    setShowUserMenu(false)
-  }
+
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100">
@@ -62,17 +56,6 @@ export function Navigation() {
             </div>
 
             <div className="w-px h-4 bg-slate-200 mx-2" />
-
-            {user ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-[13px] font-bold border border-slate-200">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <button onClick={handleLogout} className="text-[13px] font-bold text-red-500 hover:underline">退出</button>
-              </div>
-            ) : (
-              <Link href="/login" className="text-[14px] font-bold text-blue-600">登录</Link>
-            )}
           </div>
         </div>
       </div>

@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import Link from "next/link"
-import { useAuth } from "@/lib/auth-context"
 import type { Report, SystemStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -35,14 +34,16 @@ const reportIcons = [
   "fa-rocket",
 ]
 
-// 为报告分配极浅的背景颜色主题 (NotebookLM 风格)
-const reportColors = [
-  { bg: "bg-[#f1f5f9]", border: "border-slate-200", text: "text-slate-600" }, // Slate
-  { bg: "bg-[#f0f9ff]", border: "border-blue-100", text: "text-blue-600" },   // Blue
-  { bg: "bg-[#f5f3ff]", border: "border-purple-100", text: "text-purple-600" }, // Purple
-  { bg: "bg-[#f0fdf4]", border: "border-green-100", text: "text-green-600" },  // Green
-  { bg: "bg-[#fffbeb]", border: "border-amber-100", text: "text-amber-600" },  // Amber
-]
+// 统一的报告图标样式 (Professional Blue/Slate Theme)
+const reportTheme = {
+  bg: "bg-white",
+  border: "border-slate-200",
+  iconBg: "bg-blue-50",
+  iconText: "text-blue-600",
+  activeBorder: "border-blue-200",
+  hoverBorder: "hover:border-blue-400",
+  hoverShadow: "hover:shadow-md",
+}
 
 function formatReportDate(d: Date) {
   const date = new Date(d)
@@ -57,58 +58,36 @@ function getChapterCount(report: Report) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabId>("all")
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [sortBy, setSortBy] = useState<SortOption>("recent")
+  const [isLoading, setIsLoading] = useState(true)
 
-  const [recentReports, setRecentReports] = useState<Report[]>([
-    {
-      id: "1",
-      title: "特斯拉 vs 蔚来竞品分析报告",
-      status: "completed",
-      progress: 100,
-      createdAt: new Date(Date.now() - 3600000),
-      updatedAt: new Date(Date.now() - 3600000),
-      chapters: [],
-    },
-    {
-      id: "2",
-      title: "iPhone 15 Pro vs 华为 Mate 60 对比",
-      status: "completed",
-      progress: 100,
-      createdAt: new Date(Date.now() - 7200000),
-      updatedAt: new Date(Date.now() - 7200000),
-      chapters: [],
-    },
-    {
-      id: "3",
-      title: "抖音 vs 快手市场分析",
-      status: "processing",
-      progress: 65,
-      createdAt: new Date(Date.now() - 1800000),
-      updatedAt: new Date(Date.now() - 300000),
-      chapters: [],
-    },
-    {
-      id: "4",
-      title: "智能手表品类市场机会分析",
-      status: "completed",
-      progress: 100,
-      createdAt: new Date(Date.now() - 86400000 * 2),
-      updatedAt: new Date(Date.now() - 86400000 * 2),
-      chapters: [],
-    },
-    {
-      id: "5",
-      title: "家用清洁电器竞品对比",
-      status: "completed",
-      progress: 100,
-      createdAt: new Date(Date.now() - 86400000 * 5),
-      updatedAt: new Date(Date.now() - 86400000 * 5),
-      chapters: [],
-    },
-  ])
+  const [recentReports, setRecentReports] = useState<Report[]>([])
+
+  // 从 API 加载真实报告列表
+  useEffect(() => {
+    async function loadReports() {
+      try {
+        const response = await fetch("/api/reports")
+        if (response.ok) {
+          const data = await response.json()
+          setRecentReports(
+            data.reports.map((r: Record<string, unknown>) => ({
+              ...r,
+              createdAt: new Date(r.createdAt as string),
+              updatedAt: new Date(r.updatedAt as string),
+            }))
+          )
+        }
+      } catch (error) {
+        console.error("Failed to load reports:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadReports()
+  }, [])
 
   const tabs: { id: TabId; label: string }[] = [
     { id: "all", label: "全部" },
@@ -118,7 +97,7 @@ export default function DashboardPage() {
 
   const filteredReports =
     activeTab === "mine"
-      ? (user ? recentReports : [])
+      ? recentReports
       : activeTab === "featured"
         ? recentReports.slice(0, 4)
         : recentReports
@@ -140,56 +119,56 @@ export default function DashboardPage() {
 
   // 渲染统一的报告卡片
   const renderReportCard = (report: Report, index: number, showBadge: boolean = false) => {
-    const colorTheme = reportColors[index % reportColors.length]
-
     return (
       <Link key={report.id} href={`/report/${report.id}`} className="group">
         <div className={cn(
-          "h-[240px] flex flex-col rounded-2xl border transition-all duration-200 p-5 hover:shadow-lg hover:border-primary/20",
-          colorTheme.bg,
-          colorTheme.border
+          "h-[220px] flex flex-col rounded-2xl border transition-all duration-300 p-5 group-hover:-translate-y-1",
+          reportTheme.bg,
+          reportTheme.border,
+          reportTheme.hoverBorder,
+          reportTheme.hoverShadow
         )}>
-          <div className="flex items-center justify-between mb-3">
-            <div className={cn("w-10 h-10 rounded-xl bg-white/80 border shadow-sm flex items-center justify-center", colorTheme.border)}>
-              <i className={cn("fas fa-file-lines text-lg", colorTheme.text)} />
+          <div className="flex items-center justify-between mb-4">
+            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
+              <i className={cn("fas fa-file-lines text-lg transition-colors", reportTheme.iconText)} />
             </div>
             {showBadge && (
-              <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+              <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-semibold border border-blue-100">
                 精选
               </span>
             )}
             {!showBadge && report.status === "processing" && (
-              <span className="px-2.5 py-1 rounded-full bg-chart-2/10 text-chart-2 text-xs font-medium">
+              <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
                 {report.progress}%
               </span>
             )}
           </div>
 
-          <h3 className="font-semibold text-base leading-snug text-foreground line-clamp-2 group-hover:text-primary transition-colors mb-3 flex-1">
+          <h3 className="font-semibold text-base leading-snug text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors mb-auto">
             {report.title}
           </h3>
 
-          <div className="flex-shrink-0">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-              {!showBadge && (
-                <>
-                  <i className="fas fa-clock" />
-                  <span>{formatReportDate(report.updatedAt)}</span>
-                  <span>·</span>
-                </>
-              )}
-              <i className="fas fa-file-lines" />
-              <span>{getChapterCount(report) || 11} 章节</span>
-            </div>
-
-            {report.status === "processing" && (
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary to-purple rounded-full transition-all duration-500"
-                  style={{ width: `${report.progress}%` }}
-                />
+          <div className="flex-shrink-0 pt-4 border-t border-slate-50 mt-4">
+            <div className="flex items-center gap-3 text-xs text-slate-400">
+              <div className="flex items-center gap-1.5">
+                <i className="far fa-clock" />
+                <span>{formatReportDate(report.updatedAt)}</span>
               </div>
-            )}
+              <div className="flex items-center gap-1.5">
+                <i className="fas fa-list-ul" />
+                <span>{getChapterCount(report)} 章节</span>
+              </div>
+
+              {report.status === "processing" && (
+                <div className="ml-auto w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    style={{ width: `${report.progress}%` }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </Link>
@@ -197,24 +176,24 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50/50">
       <Navigation />
 
-      <main className="pt-20 pb-16">
+      <main className="pt-24 pb-16">
         <div className="max-w-[1280px] mx-auto px-6">
           {/* 筛选与操作栏 */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/50 w-fit">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200 shadow-sm w-fit">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                    "px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                     activeTab === tab.id
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-slate-100 text-slate-900 shadow-sm"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                   )}
                 >
                   {tab.label}
@@ -223,55 +202,54 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-              {/* 视图切换 - 更加精致的分割控制 */}
-              <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/30 p-1 h-10">
+              {/* 视图切换 */}
+              <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 h-10 shadow-sm">
                 <button
                   type="button"
                   onClick={() => setViewMode("grid")}
                   className={cn(
                     "px-3 h-full rounded-lg transition-all text-sm flex items-center gap-2",
                     viewMode === "grid"
-                      ? "bg-background text-primary shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-slate-100 text-blue-600 shadow-sm font-medium"
+                      : "text-slate-400 hover:text-slate-700 hover:bg-slate-50"
                   )}
                   title="网格"
                 >
                   <i className="fas fa-th-large" />
-                  <span className="hidden sm:inline">网格</span>
                 </button>
+                <div className="w-px h-4 bg-slate-200 mx-0.5"></div>
                 <button
                   type="button"
                   onClick={() => setViewMode("list")}
                   className={cn(
                     "px-3 h-full rounded-lg transition-all text-sm flex items-center gap-2",
                     viewMode === "list"
-                      ? "bg-background text-primary shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-slate-100 text-blue-600 shadow-sm font-medium"
+                      : "text-slate-400 hover:text-slate-700 hover:bg-slate-50"
                   )}
                   title="列表"
                 >
                   <i className="fas fa-list" />
-                  <span className="hidden sm:inline">列表</span>
                 </button>
               </div>
 
-              {/* 排序选择 - 统一高度和圆角 */}
+              {/* 排序选择 */}
               <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
-                <SelectTrigger className="w-[140px] h-10 rounded-xl border-border bg-background text-sm focus:ring-1 focus:ring-primary/20">
+                <SelectTrigger className="w-[140px] h-10 rounded-xl border-slate-200 bg-white text-slate-600 text-sm shadow-sm hover:border-slate-300 focus:ring-2 focus:ring-blue-100 transition-all">
                   <SelectValue placeholder="排序" />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-border shadow-lg">
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg">
                   {SORT_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value} className="text-sm">
+                    <SelectItem key={opt.value} value={opt.value} className="text-sm text-slate-600">
                       {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
-              {/* 新建报告按钮 - 更加醒目且和谐 */}
+              {/* 新建报告按钮 */}
               <Link href="/report/new">
-                <Button variant="gradient" className="gap-2 px-5 h-10 rounded-xl shadow-md hover:shadow-lg transition-all font-medium">
+                <Button variant="gradient" className="gap-2 px-6 h-10 rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 transition-all font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 border-none text-white">
                   <i className="fas fa-plus text-xs" />
                   新建报告
                 </Button>
@@ -279,15 +257,30 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* 加载中骨架屏 */}
+          {isLoading && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-[220px] rounded-2xl border border-slate-200 bg-white p-5 animate-pulse">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 mb-4" />
+                  <div className="h-4 bg-slate-100 rounded w-3/4 mb-3" />
+                  <div className="h-4 bg-slate-100 rounded w-1/2 mb-auto" />
+                  <div className="h-3 bg-slate-50 rounded w-1/3 mt-12" />
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 精选报告 - 新用户展示案例 */}
-          {(activeTab === "all" || activeTab === "featured") && (
-            <section className="mb-10">
-              <div className="flex items-center justify-between mb-5">
+          {!isLoading && (activeTab === "all" || activeTab === "featured") && (
+            <section className="mb-12">
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-foreground mb-1">
+                  <h2 className="text-xl font-bold text-slate-800 mb-1 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-blue-600 rounded-full inline-block"></span>
                     精选报告
                   </h2>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-slate-500 ml-3">
                     查看优质案例，了解AI报告生成的强大能力
                   </p>
                 </div>
@@ -295,7 +288,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => setActiveTab("featured")}
-                    className="text-sm font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1.5"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-blue-50"
                   >
                     查看全部精选
                     <i className="fas fa-arrow-right text-xs" />
@@ -303,103 +296,169 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {recentReports.slice(0, 4).map((report, i) => renderReportCard(report, i, true))}
-              </div>
+              {viewMode === "grid" ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {recentReports.slice(0, 4).map((report, i) => renderReportCard(report, i, true))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentReports.slice(0, 4).map((report, i) => {
+                    return (
+                      <Link key={report.id} href={`/report/${report.id}`} className="block group">
+                        <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
+                          {/* Icon */}
+                          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
+                            <i className={cn("fas fa-file-lines", reportTheme.iconText)} />
+                          </div>
+
+                          {/* Title & Info */}
+                          <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
+                            <div className="col-span-12 md:col-span-6">
+                              <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors flex items-center gap-2">
+                                {report.title}
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600 uppercase tracking-wide">精选</span>
+                              </h3>
+                            </div>
+                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
+                              <i className="far fa-clock"></i>
+                              {formatReportDate(report.updatedAt)}
+                            </div>
+                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
+                              <i className="fas fa-list-ul"></i>
+                              {getChapterCount(report)} 个章节
+                            </div>
+                          </div>
+
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-blue-100 transition-colors">
+                            <i className="fas fa-chevron-right text-slate-300 group-hover:text-blue-500 text-xs transition-colors" />
+                          </div>
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
             </section>
           )}
 
-          {/* 我的报告 - 统一网格布局 */}
-          {activeTab !== "featured" && (
+          {/* 我的报告 */}
+          {!isLoading && activeTab !== "featured" && (
             <section>
-              <h2 className="text-lg font-semibold text-foreground mb-4">
+              <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <span className="w-1 h-6 bg-slate-400 rounded-full inline-block"></span>
                 {activeTab === "mine" ? "我的报告" : "我的报告"}
-                <span className="ml-2 text-xs text-muted-foreground font-normal">({sortedReports.length})</span>
+                <span className="ml-1 text-sm text-slate-400 font-normal bg-slate-100 px-2 py-0.5 rounded-full">{sortedReports.length}</span>
               </h2>
 
               {sortedReports.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-muted/30 py-20 text-center">
-                  <div className="w-14 h-14 rounded-full bg-muted/60 flex items-center justify-center mx-auto mb-3">
-                    <i className="fas fa-inbox text-2xl text-muted-foreground" />
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-24 text-center">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-inbox text-3xl text-slate-300" />
                   </div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {activeTab === "mine" && !user ? "请先登录后查看「我的报告」" : "暂无报告"}
+                  <h3 className="text-lg font-medium text-slate-900 mb-1">暂无报告</h3>
+                  <p className="text-sm text-slate-500 mb-6">
+                    {activeTab === "mine" ? "你还没有创建过任何报告" : "列表为空"}
                   </p>
                   {activeTab !== "all" && (
                     <button
                       type="button"
                       onClick={() => setActiveTab("all")}
-                      className="text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+                      className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors underline decoration-blue-200 decoration-2 underline-offset-4 hover:decoration-blue-400"
                     >
                       查看全部报告
                     </button>
                   )}
                   {activeTab === "all" && (
                     <Link href="/report/new" className="inline-block">
-                      <Button variant="gradient" size="sm" className="gap-1.5">
+                      <Button variant="gradient" className="gap-2 px-6 h-10 rounded-xl shadow-md hover:shadow-lg transition-all font-medium bg-blue-600 text-white hover:bg-blue-700">
                         <i className="fas fa-plus text-xs" />
-                        新建报告
+                        新建第一份报告
                       </Button>
                     </Link>
                   )}
                 </div>
               ) : viewMode === "grid" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {/* 新建报告卡片 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* 新建报告卡片 (Grid) - Refined Style */}
                   <Link href="/report/new" className="group">
-                    <div className="h-[240px] flex flex-col items-center justify-center gap-3 rounded-2xl bg-card border border-dashed border-border hover:border-primary/30 hover:bg-secondary/30 transition-all duration-200">
-                      <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                        <i className="fas fa-plus text-xl text-primary" />
+                    <div className="h-[220px] flex flex-col items-center justify-center gap-4 rounded-2xl bg-white border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md group-hover:-translate-y-1">
+                      <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 group-hover:scale-110 transition-all duration-300 shadow-sm border border-blue-100">
+                        <i className="fas fa-plus text-2xl text-blue-500 group-hover:text-blue-600" />
                       </div>
-                      <span className="font-semibold text-base text-foreground group-hover:text-primary transition-colors">
-                        新建报告
-                      </span>
+                      <div className="text-center">
+                        <span className="block font-bold text-lg text-slate-700 group-hover:text-blue-700 transition-colors">
+                          新建报告
+                        </span>
+                        <span className="text-xs text-slate-400 mt-1 block group-hover:text-blue-400">开始新的竞品分析</span>
+                      </div>
                     </div>
                   </Link>
 
-                  {/* 报告卡片 - 与精选报告完全一致 */}
+                  {/* 报告卡片 (Grid) */}
                   {sortedReports.map((report, i) => renderReportCard(report, i, false))}
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  {/* 新建报告行 (List) - Refined Style */}
                   <Link href="/report/new" className="block group">
-                    <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-dashed border-border hover:border-primary/30 hover:bg-secondary/30 transition-all duration-200">
-                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                        <i className="fas fa-plus text-lg text-primary" />
+                    <div className="flex items-center gap-5 p-4 rounded-xl bg-white border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all duration-200 cursor-pointer">
+                      <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 border border-blue-100 transition-colors">
+                        <i className="fas fa-plus text-blue-500 group-hover:text-blue-600" />
                       </div>
-                      <span className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">新建报告</span>
+                      <div>
+                        <span className="font-bold text-slate-700 group-hover:text-blue-700 transition-colors block">
+                          新建报告
+                        </span>
+                        <span className="text-xs text-slate-400 group-hover:text-blue-400">点击开始分析</span>
+                      </div>
                     </div>
                   </Link>
+
+                  {/* 报告列表项 (List) */}
                   {sortedReports.map((report, i) => {
-                    const colorTheme = reportColors[i % reportColors.length]
                     return (
                       <Link key={report.id} href={`/report/${report.id}`} className="block group">
-                        <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border hover:shadow-md transition-shadow duration-200">
-                          <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 border", colorTheme.bg, colorTheme.border)}>
-                            <i className={cn("fas fa-file-alt text-base", colorTheme.text)} />
+                        <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
+                          {/* Icon */}
+                          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
+                            <i className={cn("fas fa-file-alt", reportTheme.iconText)} />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-sm text-foreground truncate group-hover:text-primary transition-colors">
-                              {report.title}
-                            </h3>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {formatReportDate(report.updatedAt)} · {getChapterCount(report) || 11} 个章节
-                            </p>
+
+                          {/* Title & Info */}
+                          <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
+                            <div className="col-span-12 md:col-span-6">
+                              <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">
+                                {report.title}
+                              </h3>
+                            </div>
+                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
+                              <i className="far fa-clock"></i>
+                              {formatReportDate(report.updatedAt)}
+                            </div>
+                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
+                              <i className="fas fa-list-ul"></i>
+                              {getChapterCount(report)} 个章节
+                            </div>
                           </div>
-                          {report.status === "completed" && (
-                            <span className="px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium flex-shrink-0">
-                              已完成
-                            </span>
-                          )}
-                          {report.status === "processing" && (
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="px-3 py-1.5 rounded-full bg-chart-2/10 text-chart-2 text-xs font-medium flex items-center gap-1.5">
-                                <i className="fas fa-spinner fa-spin" />
+
+                          {/* Status */}
+                          <div className="flex-shrink-0 ml-4">
+                            {report.status === "completed" ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-600 border border-green-200/50">
+                                <i className="fas fa-check-circle mr-1.5 text-[10px]"></i>
+                                已完成
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200/50">
+                                <i className="fas fa-spinner fa-spin mr-1.5 text-[10px]"></i>
                                 {report.progress}%
                               </span>
-                            </div>
-                          )}
-                          <i className="fas fa-chevron-right text-muted-foreground text-xs flex-shrink-0" />
+                            )}
+                          </div>
+
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-blue-100 transition-colors">
+                            <i className="fas fa-chevron-right text-slate-300 group-hover:text-blue-500 text-xs transition-colors" />
+                          </div>
                         </div>
                       </Link>
                     )

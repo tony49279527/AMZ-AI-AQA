@@ -1,54 +1,144 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Navigation } from "@/components/navigation"
-import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import type { ChatMessage } from "@/lib/types"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
+import { cn } from "@/lib/utils"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import rehypeRaw from "rehype-raw"
+import { ChartView } from "@/components/chat/ChartView"
+import { ExportButton } from "@/components/chat/ExportButton"
+
+// localStorage key for chat history
+const getChatStorageKey = (reportId: string) => `chat_history_${reportId}`
 
 export default function ChatPage() {
   const params = useParams()
+  const router = useRouter()
   const reportId = params.reportId as string
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "1",
-      role: "system",
-      content: "欢迎使用智能问答系统！我已加载您的报告，可以回答关于报告内容的任何问题。",
-      timestamp: new Date(),
-    },
-  ])
+
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
   const [showHistory, setShowHistory] = useState(true)
   const [showContext, setShowContext] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const [reportContext] = useState({
-    title: "特斯拉 vs 蔚来竞品分析报告",
-    chapters: ["市场分析", "竞品分析", "产品特性", "定价策略", "客户洞察"],
-    activeChapter: "市场分析",
+  // 动态加载的报告上下文
+  const [reportContext, setReportContext] = useState<{
+    title: string
+    chapters: { title: string; level: number }[]
+  }>({
+    title: "加载中...",
+    chapters: [],
   })
 
-  const quickQuestions = [
-    "总结一下主要竞争优势",
-    "市场份额对比如何？",
-    "定价策略有什么区别？",
-    "客户反馈的关键点是什么？",
-  ]
+  // 聊天历史列表
+  const [chatSessions] = useState([
+    { id: reportId, title: "当前对话", time: "活跃中", active: true },
+  ])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  // 根据报告章节动态生成推荐问题
+  const quickQuestions = reportContext.chapters.length > 0
+    ? [
+      `总结一下「${reportContext.chapters[0]?.title || '市场分析'}」的要点`,
+      ...reportContext.chapters
+        .filter(c => c.level === 2)
+        .slice(1, 4)
+        .map(c => `关于「${c.title}」有什么关键发现？`),
+    ].slice(0, 4)
+    : [
+      "总结一下这个产品的核心竞争优势",
+      "主要竞品的优劣势对比是什么？",
+      "用户的核心痛点有哪些？",
+      "产品主图应该怎么拍摄？",
+    ]
+
+  // ——— 加载报告上下文 ———
+  useEffect(() => {
+    async function loadReportContext() {
+      try {
+        const response = await fetch(`/api/report/${reportId}`)
+        if (response.ok) {
+          const text = await response.text()
+
+          // 提取标题 (第一个 # 标题，或使用报告 ID)
+          const titleMatch = text.match(/^#\s+(.+)$/m)
+          const title = titleMatch ? titleMatch[1].replace(/\*+/g, '').trim() : `报告 ${reportId}`
+
+          // 提取章节目录
+          const chapters = text
+            .split("\n")
+            .filter((line) => line.startsWith("## ") || line.startsWith("### "))
+            .map((line) => {
+              const isSubSection = line.startsWith("### ")
+              const chapterTitle = line.replace(/^#{2,3}\s+/, "").trim()
+              return { title: chapterTitle, level: isSubSection ? 3 : 2 }
+            })
+
+          setReportContext({ title, chapters })
+        }
+      } catch (error) {
+        console.error("Error loading report context:", error)
+      }
+    }
+
+    loadReportContext()
+  }, [reportId])
+
+  // ——— 加载聊天历史 ———
+  useEffect(() => {
+    const stored = localStorage.getItem(getChatStorageKey(reportId))
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        setMessages(
+          parsed.map((m: ChatMessage) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }))
+        )
+      } catch {
+        // 初始化欢迎消息
+        initWelcomeMessage()
+      }
+    } else {
+      initWelcomeMessage()
+    }
+  }, [reportId])
+
+  function initWelcomeMessage() {
+    setMessages([
+      {
+        id: "welcome",
+        role: "system",
+        content: "欢迎使用智能问答系统！我已加载您的报告，可以回答关于报告内容的任何问题。",
+        timestamp: new Date(),
+      },
+    ])
   }
+
+  // ——— 保存聊天历史 ———
+  useEffect(() => {
+    if (messages.length > 0 && messages[0]?.id !== "welcome" || messages.length > 1) {
+      localStorage.setItem(getChatStorageKey(reportId), JSON.stringify(messages))
+    }
+  }, [messages, reportId])
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [])
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, scrollToBottom])
 
+  // ——— 发送消息并处理 SSE 流 ———
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return
 
@@ -61,27 +151,129 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const currentInput = input
     setInput("")
     setIsStreaming(true)
 
-    // Simulate AI streaming response
-    setTimeout(() => {
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content:
-          "根据报告分析，特斯拉在技术创新和品牌影响力方面具有显著优势，而蔚来则在用户服务和本土化体验上表现突出。市场份额方面，特斯拉占据约35%，蔚来约为15%...",
-        timestamp: new Date(),
-        reportId,
-        sources: ["第2章: 竞品分析", "第4章: 定价策略"],
+    // 构建发送给 API 的消息列表 (不包含 system 类型的前端消息)
+    // 上下文截断：只保留最近 10 轮对话 (20 条消息) 以防止 token 溢出
+    const MAX_CONTEXT_MESSAGES = 20
+    const allApiMessages = [...messages, userMessage]
+      .filter((m) => m.role !== "system")
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }))
+    const apiMessages = allApiMessages.length > MAX_CONTEXT_MESSAGES
+      ? allApiMessages.slice(-MAX_CONTEXT_MESSAGES)
+      : allApiMessages
+
+    // 创建 AI 回复占位消息
+    const aiMessageId = (Date.now() + 1).toString()
+    const aiMessage: ChatMessage = {
+      id: aiMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+      reportId,
+      sources: [],
+    }
+    setMessages((prev) => [...prev, aiMessage])
+
+    try {
+      // 从 localStorage 读取用户选择的模型
+      let selectedModel: string | undefined
+      try {
+        const stored = localStorage.getItem("app_settings")
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          selectedModel = parsed?.llm?.defaultModel
+        }
+      } catch { /* ignore */ }
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages, reportId, model: selectedModel }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
       }
-      setMessages((prev) => [...prev, aiMessage])
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let fullContent = ""
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const text = decoder.decode(value, { stream: true })
+          const lines = text.split("\n")
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6)
+              if (data === "[DONE]") break
+
+              try {
+                const parsed = JSON.parse(data)
+                if (parsed.content) {
+                  fullContent += parsed.content
+                  // 更新消息内容 (流式效果)
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === aiMessageId
+                        ? { ...m, content: fullContent }
+                        : m
+                    )
+                  )
+                }
+              } catch {
+                // 忽略解析错误
+              }
+            }
+          }
+        }
+      }
+
+      // 提取引用来源 (从回复内容中寻找 [来源: xxx] 模式)
+      const sourceMatches = fullContent.match(/\[来源[:：]\s*([^\]]+)\]/g)
+      const sources = sourceMatches
+        ? sourceMatches.map((s) => s.replace(/\[来源[:：]\s*/, "").replace("]", ""))
+        : []
+
+      // 最终更新消息（加上来源）
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMessageId
+            ? { ...m, content: fullContent, sources }
+            : m
+        )
+      )
+    } catch (error) {
+      console.error("Chat error:", error)
+      // 更新为错误消息
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMessageId
+            ? {
+              ...m,
+              content: `抱歉，回答时出现错误: ${error instanceof Error ? error.message : "未知错误"}。请检查 API 配置后重试。`,
+            }
+            : m
+        )
+      )
+    } finally {
       setIsStreaming(false)
-    }, 1500)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
@@ -91,288 +283,449 @@ export default function ChatPage() {
     navigator.clipboard.writeText(content)
   }
 
+  const clearHistory = () => {
+    localStorage.removeItem(getChatStorageKey(reportId))
+    initWelcomeMessage()
+  }
+
+  const exportChat = () => {
+    const chatMessages = messages.filter(m => m.role !== "system")
+    if (chatMessages.length === 0) return
+
+    let md = `# 智能问答记录 - ${reportContext.title}\n\n`
+    md += `> 导出时间: ${new Date().toLocaleString("zh-CN")} | 报告ID: ${reportId}\n\n---\n\n`
+
+    chatMessages.forEach((m) => {
+      const time = new Date(m.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+      if (m.role === "user") {
+        md += `### 🧑 用户 (${time})\n\n${m.content}\n\n`
+      } else {
+        md += `### 🤖 AI 助手 (${time})\n\n${m.content}\n\n`
+        if (m.sources && m.sources.length > 0) {
+          md += `**来源:** ${m.sources.join(", ")}\n\n`
+        }
+      }
+      md += `---\n\n`
+    })
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `chat_${reportId}_${Date.now()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      <main className="container mx-auto px-6 py-24">
-        <div className="flex gap-6 h-[calc(100vh-8rem)]">
-          {/* Left Sidebar - Chat History */}
-          {showHistory && (
-            <Card className="w-64 p-4 bg-card border-border flex-shrink-0 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold">聊天历史</h3>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowHistory(false)}
-                  className="h-8 w-8 hover:bg-primary/20"
+      {/* ═══════ 三 Tab 导航条 ═══════ */}
+      <div className="bg-white border-b border-slate-200 fixed top-[62px] left-0 right-0 z-40 no-print">
+        <div className="max-w-[1400px] mx-auto px-6">
+          <div className="flex justify-center">
+            <div className="flex space-x-8">
+              <button
+                onClick={() => router.push(`/report/${reportId}`)}
+                className="flex items-center gap-2 px-4 py-3 text-base font-semibold text-slate-500 border-b-2 border-transparent hover:text-blue-600 transition-all"
+              >
+                <i className="fas fa-file-alt"></i>
+                报告详情
+              </button>
+              <button
+                className="flex items-center gap-2 px-4 py-3 text-base font-semibold text-blue-600 border-b-2 border-blue-600 transition-all"
+              >
+                <i className="fas fa-comments"></i>
+                智能问答
+              </button>
+              <button
+                onClick={() => router.push(`/report/${reportId}?tab=sources`)}
+                className="flex items-center gap-2 px-4 py-3 text-base font-semibold text-slate-500 border-b-2 border-transparent hover:text-blue-600 transition-all"
+              >
+                <i className="fas fa-database"></i>
+                数据源
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex h-[calc(100vh-110px)] pt-[110px]">
+        {/* ═══════ 左侧栏 - 聊天历史 ═══════ */}
+        {showHistory ? (
+          <aside className="w-64 flex-shrink-0 border-r border-border/60 flex flex-col bg-muted/20">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+              <span className="text-sm font-semibold text-foreground">聊天历史</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={clearHistory}
+                  className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+                  title="清除历史"
                 >
-                  <i className="fas fa-chevron-left text-sm"></i>
-                </Button>
+                  <i className="fas fa-trash-alt text-xs text-muted-foreground" />
+                </button>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+                >
+                  <i className="fas fa-chevron-left text-xs text-muted-foreground" />
+                </button>
               </div>
-              <div className="space-y-2">
-                {["特斯拉 vs 蔚来竞品分析", "iPhone 15 Pro 对比分析", "抖音市场策略讨论"].map((title, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-3 rounded-lg cursor-pointer transition-all text-sm ${
-                      idx === 0 ? "bg-primary/20 border-l-2 border-primary" : "hover:bg-secondary"
-                    }`}
-                  >
-                    <div className="font-medium mb-1">{title}</div>
-                    <div className="text-xs text-muted-foreground">{idx === 0 ? "活跃中" : `${idx + 2}小时前`}</div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+            </div>
 
-          {/* Main Chat Area */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Header */}
-            <Card className="p-4 bg-card border-border mb-4 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-3">
-                {!showHistory && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowHistory(true)}
-                    className="h-8 w-8 hover:bg-primary/20"
-                  >
-                    <i className="fas fa-chevron-right text-sm"></i>
-                  </Button>
-                )}
-                <div>
-                  <h2 className="font-bold text-lg">{reportContext.title}</h2>
-                  <p className="text-xs text-muted-foreground">智能问答 | AI Q&A</p>
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              {chatSessions.map((item, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "px-3 py-3 rounded-lg cursor-pointer transition-all text-sm",
+                    item.active
+                      ? "bg-primary/10 border-l-2 border-primary"
+                      : "hover:bg-muted/60"
+                  )}
+                >
+                  <div className="font-medium text-[13px] text-foreground mb-0.5">{item.title}</div>
+                  <div className="text-[11px] text-muted-foreground">{item.time}</div>
                 </div>
+              ))}
+            </div>
+          </aside>
+        ) : (
+          <aside className="w-12 flex-shrink-0 border-r border-border/60 flex flex-col items-center pt-3">
+            <button
+              onClick={() => setShowHistory(true)}
+              className="w-8 h-8 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+              title="展开聊天历史"
+            >
+              <i className="fas fa-chevron-right text-xs text-muted-foreground" />
+            </button>
+          </aside>
+        )}
+
+        {/* ═══════ 中间 - 对话区 ═══════ */}
+        <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
+          {/* 对话标题栏 */}
+          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-white">
+            <div className="flex items-center gap-3">
+              {!showHistory && (
+                <button
+                  onClick={() => setShowHistory(true)}
+                  className="w-8 h-8 rounded-md hover:bg-slate-100 flex items-center justify-center transition-colors"
+                >
+                  <i className="fas fa-chevron-right text-sm text-slate-500" />
+                </button>
+              )}
+              <div>
+                <h2 className="text-base font-bold text-slate-800">{reportContext.title}</h2>
+                <p className="text-xs text-slate-500">智能问答 | AI Q&A</p>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-2 bg-transparent">
-                  <i className="fas fa-download"></i>
-                  导出对话
-                </Button>
-              </div>
-            </Card>
-
-            {/* Messages */}
-            <Card className="flex-1 p-6 bg-card border-border overflow-y-auto mb-4">
-              <div className="space-y-6">
-                {messages.map((message) => (
-                  <div key={message.id}>
-                    {message.role === "system" && (
-                      <div className="flex justify-center">
-                        <div className="bg-secondary/50 px-4 py-2 rounded-full text-sm text-muted-foreground">
-                          <i className="fas fa-info-circle mr-2"></i>
-                          {message.content}
-                        </div>
-                      </div>
-                    )}
-
-                    {message.role === "user" && (
-                      <div className="flex justify-end">
-                        <div className="max-w-[70%]">
-                          <div className="bg-primary text-primary-foreground px-6 py-4 rounded-2xl rounded-tr-sm">
-                            <p className="text-base leading-relaxed">{message.content}</p>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1 text-right">
-                            {message.timestamp.toLocaleTimeString("zh-CN", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {message.role === "assistant" && (
-                      <div className="flex justify-start">
-                        <div className="max-w-[70%]">
-                          <div className="bg-secondary px-6 py-4 rounded-2xl rounded-tl-sm">
-                            <p className="text-base leading-relaxed whitespace-pre-line">{message.content}</p>
-                            {message.sources && message.sources.length > 0 && (
-                              <div className="mt-4 pt-4 border-t border-border">
-                                <div className="text-xs text-muted-foreground mb-2">
-                                  <i className="fas fa-book mr-1"></i>
-                                  来源章节:
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {message.sources.map((source, idx) => (
-                                    <span
-                                      key={idx}
-                                      className="px-2 py-1 bg-primary/20 text-primary rounded text-xs cursor-pointer hover:bg-primary/30 transition-all"
-                                    >
-                                      {source}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-xs text-muted-foreground">
-                              {message.timestamp.toLocaleTimeString("zh-CN", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyMessage(message.content)}
-                              className="h-6 px-2 text-xs hover:text-primary hover:bg-primary/10"
-                            >
-                              <i className="fas fa-copy mr-1"></i>
-                              复制
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {isStreaming && (
-                  <div className="flex justify-start">
-                    <div className="bg-secondary px-6 py-4 rounded-2xl rounded-tl-sm">
-                      <div className="flex gap-2">
-                        <div
-                          className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                          style={{ animationDelay: "0s" }}
-                        />
-                        <div
-                          className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                          style={{ animationDelay: "0.2s" }}
-                        />
-                        <div
-                          className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                          style={{ animationDelay: "0.4s" }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-            </Card>
-
-            {/* Input Area */}
-            <Card className="p-4 bg-card border-border flex-shrink-0">
-              {/* Quick Questions */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                {quickQuestions.map((question, idx) => (
-                  <Button
-                    key={idx}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setInput(question)}
-                    className="text-xs bg-transparent hover:bg-primary/20 hover:text-primary hover:border-primary"
-                  >
-                    <i className="fas fa-lightbulb mr-1"></i>
-                    {question}
-                  </Button>
-                ))}
-              </div>
-
-              {/* Input */}
-              <div className="flex gap-3">
-                <div className="flex-1 relative">
-                  <Textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="输入您的问题... (Ctrl+Enter 发送)"
-                    className="min-h-[60px] max-h-[200px] resize-none bg-secondary/50 pr-12"
-                  />
-                  <Button variant="ghost" size="icon" className="absolute bottom-2 right-2 h-8 w-8 hover:bg-primary/20">
-                    <i className="fas fa-paperclip text-muted-foreground"></i>
-                  </Button>
-                </div>
-                <Button onClick={handleSend} disabled={!input.trim() || isStreaming} size="lg" className="px-8 gap-2">
-                  <i className="fas fa-paper-plane"></i>
-                  发送
-                </Button>
-              </div>
-
-              <p className="text-xs text-muted-foreground mt-2">
-                <i className="fas fa-info-circle mr-1"></i>
-                AI基于您的报告内容回答问题，答案仅供参考
-              </p>
-            </Card>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportChat}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200 transition-colors"
+              >
+                <i className="fas fa-download text-[10px]" />
+                导出
+              </button>
+              <button className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors text-slate-500" title="设置">
+                <i className="fas fa-sliders-h text-sm" />
+              </button>
+            </div>
           </div>
 
-          {/* Right Sidebar - Report Context */}
-          {showContext && (
-            <Card className="w-80 p-4 bg-card border-border flex-shrink-0 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold">报告上下文</h3>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowContext(false)}
-                  className="h-8 w-8 hover:bg-primary/20"
-                >
-                  <i className="fas fa-chevron-right text-sm"></i>
-                </Button>
-              </div>
+          {/* 消息流 */}
+          <div className="flex-1 overflow-y-auto scroll-smooth">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+              {messages.map((message, idx) => (
+                <div key={message.id}>
+                  {/* 系统消息 */}
+                  {message.role === "system" && (
+                    <div className="text-center py-4">
+                      <div className="inline-flex items-center gap-2 bg-slate-200/50 px-4 py-2 rounded-full text-xs font-medium text-slate-500">
+                        <i className="fas fa-info-circle" />
+                        {message.content}
+                      </div>
+                    </div>
+                  )}
 
-              <div className="space-y-4">
-                <div className="p-3 bg-secondary/50 rounded-lg">
-                  <div className="text-xs text-muted-foreground mb-1">当前报告</div>
-                  <div className="font-semibold">{reportContext.title}</div>
-                </div>
-
-                <div>
-                  <div className="text-sm font-semibold mb-3">可用章节</div>
-                  <div className="space-y-2">
-                    {reportContext.chapters.map((chapter, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-3 rounded-lg cursor-pointer transition-all ${
-                          chapter === reportContext.activeChapter
-                            ? "bg-primary/20 border-l-2 border-primary"
-                            : "bg-secondary/30 hover:bg-secondary"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{chapter}</span>
-                          <i className="fas fa-chevron-right text-xs text-muted-foreground"></i>
+                  {/* 用户消息 - 右对齐 */}
+                  {message.role === "user" && (
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%] sm:max-w-[75%]">
+                        <div className="bg-blue-600 text-white px-5 py-3.5 rounded-2xl rounded-tr-sm shadow-sm selection:bg-blue-700">
+                          <p className="text-[15px] leading-relaxed">{message.content}</p>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-1.5 text-right font-medium">
+                          {message.timestamp.toLocaleTimeString("zh-CN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </div>
                       </div>
-                    ))}
+                    </div>
+                  )}
+
+                  {/* AI 回复 - 左对齐 */}
+                  {message.role === "assistant" && (message.content || (!isStreaming && idx !== messages.length - 1)) && (
+                    <div className="flex items-start gap-4">
+                      <div className="w-9 h-9 rounded-xl bg-white border border-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                        <div className="bg-gradient-to-br from-indigo-500 to-violet-500 text-transparent bg-clip-text">
+                          <i className="fas fa-robot text-lg" />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="bg-white px-6 py-5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100/60 text-slate-800 text-[15px] leading-7 group hover:shadow-md transition-shadow">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw]}
+                            components={{
+                              code({ node, inline, className, children, ...props }: any) {
+                                if (className === "language-json:chart") {
+                                  return <ChartView config={String(children).replace(/\n$/, "")} />
+                                }
+
+                                const match = /language-(\w+)/.exec(className || "")
+                                return !inline ? (
+                                  <div className="relative group/code my-4">
+                                    <pre {...props} className={cn(className, "p-4 rounded-xl bg-slate-900 text-slate-100 overflow-x-auto text-sm scrollbar-hide")}>
+                                      <code className={className}>{children}</code>
+                                    </pre>
+                                  </div>
+                                ) : (
+                                  <code className="px-1.5 py-0.5 rounded-md bg-slate-100 text-indigo-600 font-medium text-[0.9em]" {...props}>
+                                    {children}
+                                  </code>
+                                )
+                              },
+                              p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
+                              ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1">{children}</ol>,
+                              table: ({ children }) => (
+                                <div className="overflow-x-auto my-4 border border-slate-200 rounded-lg">
+                                  <table className="min-w-full divide-y divide-slate-200">{children}</table>
+                                </div>
+                              ),
+                              th: ({ children }) => <th className="px-4 py-2 bg-slate-50 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">{children}</th>,
+                              td: ({ children }) => <td className="px-4 py-2 border-t border-slate-100 text-sm text-slate-700">{children}</td>,
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                          {/* 流式光标 */}
+                          {isStreaming && messages[messages.length - 1]?.id === message.id && (
+                            <span className="inline-block w-1.5 h-4 bg-indigo-500 ml-1 animate-pulse align-middle" />
+                          )}
+
+                          {/* 来源引用标签 (Inside bubble for cleaner look) */}
+                          {message.sources && message.sources.length > 0 && !isStreaming && (
+                            <div className="mt-4 pt-4 border-t border-slate-100">
+                              <div className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">参考来源</div>
+                              <div className="flex flex-wrap gap-2">
+                                {message.sources.map((source, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-50 text-xs text-slate-600 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 cursor-pointer transition-all"
+                                  >
+                                    <i className="fas fa-file-alt text-[10px] opacity-70" />
+                                    {source}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 操作栏 */}
+                        {!isStreaming && message.content && (
+                          <div className="flex items-center gap-4 mt-2 ml-2">
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              {message.timestamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="复制" onClick={() => copyMessage(message.content)}>
+                                <i className="far fa-copy text-xs" />
+                              </button>
+                              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="有用">
+                                <i className="far fa-thumbs-up text-xs" />
+                              </button>
+                              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="没用">
+                                <i className="far fa-thumbs-down text-xs" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* 流式加载动画 */}
+              {isStreaming && messages[messages.length - 1]?.content === "" && (
+                <div className="flex items-start gap-4">
+                  <div className="w-9 h-9 rounded-xl bg-white border border-slate-100 flex items-center justify-center flex-shrink-0 shadow-sm animate-pulse">
+                    <i className="fas fa-robot text-indigo-500 text-lg" />
+                  </div>
+                  <div className="bg-white px-6 py-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex items-center gap-1.5">
+                    <span className="text-sm text-slate-500 mr-2 font-medium">思考中</span>
+                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "0s" }} />
+                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} className="h-4" />
+            </div>
+          </div>
+
+          {/* ═══════ 底部输入区 (Solid Footer) ═══════ */}
+          <div className="bg-slate-50 p-4 sm:p-6 pb-4 relative z-10">
+            <div className="max-w-4xl mx-auto">
+              {/* 快捷问题 */}
+              {messages.length <= 1 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {quickQuestions.map((question, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setInput(question)
+                        inputRef.current?.focus()
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:border-indigo-200 hover:text-indigo-600 hover:shadow-sm transition-all"
+                    >
+                      <i className="fas fa-sparkles text-amber-400" />
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 输入框容器 */}
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-100/50 to-purple-100/50 rounded-2xl blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 -z-10" />
+                <div className="relative flex items-end gap-2 bg-white group-focus-within:bg-white rounded-2xl border border-slate-200 group-focus-within:border-indigo-300 group-focus-within:ring-4 group-focus-within:ring-indigo-100/50 transition-all px-4 py-3 shadow-sm">
+                  <textarea
+                    ref={inputRef as any}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    placeholder="问点什么... (Shift + Enter 换行)"
+                    className="flex-1 bg-transparent text-[15px] text-slate-900 placeholder:text-slate-400 outline-none resize-none max-h-48 min-h-[44px] py-2"
+                    disabled={isStreaming}
+                    rows={1}
+                    onInput={(e) => {
+                      const target = e.target as HTMLTextAreaElement;
+                      target.style.height = 'auto';
+                      target.style.height = `${Math.min(target.scrollHeight, 192)}px`;
+                    }}
+                  />
+
+                  <div className="flex items-center gap-1 pb-1.5">
+                    <button className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors" title="上传附件">
+                      <i className="fas fa-link text-sm" />
+                    </button>
+                    <button
+                      onClick={handleSend}
+                      disabled={!input.trim() || isStreaming}
+                      className={cn(
+                        "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm ml-1",
+                        input.trim() && !isStreaming
+                          ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-500/20 active:scale-95 transform"
+                          : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      )}
+                    >
+                      <i className="fas fa-arrow-up text-sm font-bold" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-center mt-3 flex items-center justify-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity">
+                <i className="fas fa-shield-alt text-[10px] text-slate-400" />
+                <p className="text-[10px] text-slate-400">
+                  内容由 AI 生成，请仔细甄别
+                </p>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        {/* ═══════ 右侧栏 - 报告上下文 ═══════ */}
+        {
+          showContext ? (
+            <aside className="w-72 flex-shrink-0 border-l border-border/60 flex flex-col bg-muted/20 overflow-y-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                <span className="text-sm font-semibold text-foreground">报告上下文</span>
+                <button
+                  onClick={() => setShowContext(false)}
+                  className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+                >
+                  <i className="fas fa-chevron-right text-xs text-muted-foreground" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* 当前报告 */}
+                <div className="px-3 py-3 bg-muted/50 rounded-lg">
+                  <div className="text-[11px] text-muted-foreground mb-1">当前报告</div>
+                  <div className="text-sm font-semibold text-foreground">{reportContext.title}</div>
+                </div>
+
+                {/* 报告章节 */}
+                <div>
+                  <div className="text-xs font-semibold text-foreground mb-2 px-1">
+                    报告章节 ({reportContext.chapters.filter(c => c.level === 2).length} 章)
+                  </div>
+                  <div className="space-y-0.5">
+                    {reportContext.chapters
+                      .filter(c => c.level === 2)
+                      .map((chapter, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm hover:bg-muted/60 text-foreground"
+                        >
+                          <span className="text-[13px] truncate">{chapter.title}</span>
+                          <i className="fas fa-chevron-right text-[10px] text-muted-foreground flex-shrink-0" />
+                        </div>
+                      ))}
                   </div>
                 </div>
 
-                <div className="p-3 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg border border-primary/20">
-                  <div className="flex items-start gap-3">
-                    <i className="fas fa-lightbulb text-primary mt-1"></i>
+                {/* 提示 */}
+                <div className="px-3 py-3 bg-primary/5 rounded-lg border border-primary/10">
+                  <div className="flex items-start gap-2">
+                    <i className="fas fa-lightbulb text-primary text-xs mt-0.5" />
                     <div>
-                      <div className="text-sm font-semibold mb-1">提示</div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        您可以询问关于报告中任何章节的问题，AI会引用相关章节内容为您解答。
+                      <div className="text-xs font-semibold text-foreground mb-1">提示</div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        AI 会基于完整报告内容回答问题，并标注引用来源章节。您也可以让 AI 生成产品图片描述等创意内容。
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
-            </Card>
-          )}
-
-          {/* Toggle buttons when sidebars are hidden */}
-          {!showContext && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowContext(true)}
-              className="fixed right-6 top-32 h-10 w-10 bg-card hover:bg-primary/20"
-            >
-              <i className="fas fa-chevron-left text-sm"></i>
-            </Button>
-          )}
-        </div>
-      </main>
-    </div>
+            </aside>
+          ) : (
+            <aside className="w-12 flex-shrink-0 border-l border-border/60 flex flex-col items-center pt-3">
+              <button
+                onClick={() => setShowContext(true)}
+                className="w-8 h-8 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+                title="展开报告上下文"
+              >
+                <i className="fas fa-chevron-left text-xs text-muted-foreground" />
+              </button>
+            </aside>
+          )
+        }
+      </div >
+    </div >
   )
 }

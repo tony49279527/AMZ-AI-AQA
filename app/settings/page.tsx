@@ -12,9 +12,9 @@ import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState({
+  const defaultSettings = {
     llm: {
-      defaultModel: "gpt-4",
+      defaultModel: "google/gemini-2.0-flash-001",
       temperature: 0.7,
       maxTokens: 4096,
       apiKey: "sk-*********************",
@@ -48,11 +48,28 @@ export default function SettingsPage() {
       theme: "dark",
       compactMode: false,
     },
+  }
+
+  // 从 localStorage 加载设置（如果存在）
+  const [settings, setSettings] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("app_settings")
+      if (stored) {
+        try {
+          return { ...defaultSettings, ...JSON.parse(stored) }
+        } catch {
+          return defaultSettings
+        }
+      }
+    }
+    return defaultSettings
   })
 
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
+    // 持久化到 localStorage
+    localStorage.setItem("app_settings", JSON.stringify(settings))
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -129,14 +146,15 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4">GPT-4</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
-                      <SelectItem value="claude-3">Claude 3</SelectItem>
-                      <SelectItem value="claude-3-opus">Claude 3 Opus</SelectItem>
+                      <SelectItem value="google/gemini-2.0-flash-001">Gemini 2.0 Flash (免费)</SelectItem>
+                      <SelectItem value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro Preview</SelectItem>
+                      <SelectItem value="anthropic/claude-sonnet-4">Claude Sonnet 4</SelectItem>
+                      <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
+                      <SelectItem value="openai/gpt-4.1-mini">GPT-4.1 Mini</SelectItem>
+                      <SelectItem value="deepseek/deepseek-chat-v3-0324">DeepSeek V3</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-sm text-muted-foreground mt-2">选择用于报告生成的默认LLM模型</p>
+                  <p className="text-sm text-muted-foreground mt-2">选择用于报告生成和问答的LLM模型（通过 OpenRouter 路由）</p>
                 </div>
 
                 <div>
@@ -259,13 +277,12 @@ export default function SettingsPage() {
                         </Select>
 
                         <div
-                          className={`w-3 h-3 rounded-full ${
-                            config.priority === "high"
-                              ? "bg-primary animate-pulse"
-                              : config.priority === "medium"
-                                ? "bg-chart-2"
-                                : "bg-muted-foreground"
-                          }`}
+                          className={`w-3 h-3 rounded-full ${config.priority === "high"
+                            ? "bg-primary animate-pulse"
+                            : config.priority === "medium"
+                              ? "bg-chart-2"
+                              : "bg-muted-foreground"
+                            }`}
                         />
                       </div>
                     </div>

@@ -10,10 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import { useRouter } from "next/navigation"
-
-type Step = 1 | 2 | 3 | 4 | 5
 
 interface FileUpload {
   file: File | null
@@ -23,489 +20,522 @@ interface FileUpload {
   type: string
 }
 
-interface ReportConfig {
-  title: string
-  selectedChapters: string[]
-  customInstructions: string
-  llmModel: string
-}
-
 export default function NewReportPage() {
   const router = useRouter()
-  const [currentStep, setCurrentStep] = useState<Step>(1)
-  const [mainProductFile, setMainProductFile] = useState<FileUpload | null>(null)
-  const [competitorFile, setCompetitorFile] = useState<FileUpload | null>(null)
-  const [reportConfig, setReportConfig] = useState<ReportConfig>({
-    title: "",
-    selectedChapters: [],
-    customInstructions: "",
-    llmModel: "gpt-4",
-  })
+  const [isGenerating, setIsGenerating] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [isComplete, setIsComplete] = useState(false)
   const [reportId, setReportId] = useState<string | null>(null)
+  const [logs, setLogs] = useState<{ time: string; message: string; error?: boolean }[]>([])
+  const [chapterStatuses, setChapterStatuses] = useState<Record<number, string>>({})
+  const [completionData, setCompletionData] = useState<{ chapters: number; elapsed: number } | null>(null)
 
-  const steps = [
-    { number: 1, title: "文件上传", subtitle: "File Upload" },
-    { number: 2, title: "配置选项", subtitle: "Configuration" },
-    { number: 3, title: "数据采集", subtitle: "Data Collection" },
-    { number: 4, title: "生成报告", subtitle: "Generate Report" },
-    { number: 5, title: "完成", subtitle: "Complete" },
-  ]
+  // Form state
+  const [coreAsins, setCoreAsins] = useState("")
+  const [competitorAsins, setCompetitorAsins] = useState("")
+  const [marketplace, setMarketplace] = useState("US")
+  const [title, setTitle] = useState("")
+  const [language, setLanguage] = useState("zh")
+  const [llmModel, setLlmModel] = useState("claude-3.5-sonnet")
+  const [websiteCount, setWebsiteCount] = useState("10")
+  const [youtubeCount, setYoutubeCount] = useState("10")
+  const [customPromptTab, setCustomPromptTab] = useState<"A" | "B" | "C">("A")
+  const [customPromptA, setCustomPromptA] = useState("")
+  const [customPromptB, setCustomPromptB] = useState("")
+  const [customPromptC, setCustomPromptC] = useState("")
+  const [returnsFile, setReturnsFile] = useState<FileUpload | null>(null)
+  const [audienceFile, setAudienceFile] = useState<FileUpload | null>(null)
 
-  const chapters = [
-    "市场分析",
-    "竞品分析",
-    "产品特性",
-    "定价策略",
-    "客户洞察",
-    "SWOT分析",
-    "增长机会",
-    "风险评估",
-    "战略建议",
-    "执行摘要",
-    "数据综合",
-  ]
-
-  const handleFileUpload = useCallback((type: "main" | "competitor", event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback((type: "returns" | "audience", event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-
     const reader = new FileReader()
     reader.onloadend = () => {
       const upload: FileUpload = {
-        file,
-        preview: reader.result as string,
-        name: file.name,
-        size: file.size,
-        type: file.type,
+        file, preview: reader.result as string,
+        name: file.name, size: file.size, type: file.type,
       }
-      if (type === "main") {
-        setMainProductFile(upload)
-      } else {
-        setCompetitorFile(upload)
-      }
+      if (type === "returns") setReturnsFile(upload)
+      else setAudienceFile(upload)
     }
     reader.readAsDataURL(file)
   }, [])
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-  }
+  const canSubmit = coreAsins.trim() && competitorAsins.trim() && title.trim()
 
-  const handleDrop = useCallback((type: "main" | "competitor", e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (!file) return
+  const handleSubmit = async () => {
+    if (!canSubmit) return
+    setIsGenerating(true)
+    setProgress(0)
+    setLogs([])
+    setChapterStatuses({})
 
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const upload: FileUpload = {
-        file,
-        preview: reader.result as string,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      }
-      if (type === "main") {
-        setMainProductFile(upload)
-      } else {
-        setCompetitorFile(upload)
-      }
+    const addLog = (message: string, error?: boolean) => {
+      setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, error }])
     }
-    reader.readAsDataURL(file)
-  }, [])
 
-  const startGeneration = () => {
-    setCurrentStep(3)
-    // Simulate progress
-    let currentProgress = 0
-    const interval = setInterval(() => {
-      currentProgress += Math.random() * 10
-      if (currentProgress >= 100) {
-        currentProgress = 100
-        clearInterval(interval)
-        setTimeout(() => {
-          setReportId("report_" + Date.now())
-          setCurrentStep(5)
-        }, 1000)
+    addLog("开始生成报告...")
+
+    try {
+      const response = await fetch("/api/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          coreAsins,
+          competitorAsins,
+          marketplace,
+          language,
+          customPrompt: currentPrompt,
+        }),
+      })
+
+      if (!response.ok) {
+        addLog(`API 错误: ${response.status}`, true)
+        setIsGenerating(false)
+        return
       }
-      setProgress(Math.min(currentProgress, 100))
-    }, 800)
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        addLog("无法获取响应流", true)
+        setIsGenerating(false)
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        let eventType = ""
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7)
+          } else if (line.startsWith("data: ") && eventType) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              switch (eventType) {
+                case "init":
+                  setReportId(data.reportId)
+                  addLog(`报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
+                  break
+                case "progress":
+                  setProgress(data.overallProgress)
+                  setChapterStatuses(prev => ({ ...prev, [data.chapter]: data.status }))
+                  break
+                case "log":
+                  addLog(data.message, data.error)
+                  break
+                case "complete":
+                  setProgress(100)
+                  setCompletionData({ chapters: data.chapters, elapsed: data.elapsed })
+                  addLog(`✅ 报告生成完成! 共 ${data.chapters} 章，耗时 ${data.elapsed} 秒`)
+                  setTimeout(() => {
+                    setIsGenerating(false)
+                    setIsComplete(true)
+                  }, 1000)
+                  break
+              }
+            } catch { /* skip malformed JSON */ }
+            eventType = ""
+          }
+        }
+      }
+    } catch (error) {
+      addLog(`网络错误: ${error instanceof Error ? error.message : "Unknown"}`, true)
+      setIsGenerating(false)
+    }
   }
 
-  const canProceedFromStep1 = mainProductFile && competitorFile
-  const canProceedFromStep2 = reportConfig.title && reportConfig.selectedChapters.length > 0
+  const currentPrompt = customPromptTab === "A" ? customPromptA : customPromptTab === "B" ? customPromptB : customPromptC
+  const setCurrentPrompt = (val: string) => {
+    if (customPromptTab === "A") setCustomPromptA(val)
+    else if (customPromptTab === "B") setCustomPromptB(val)
+    else setCustomPromptC(val)
+  }
 
+  // ─── Complete state ───
+  if (isComplete) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-6 py-24">
+          <Card className="p-8 bg-card border-border">
+            <div className="text-center py-12">
+              <div className="mb-8">
+                <i className="fas fa-circle-check text-primary text-8xl mb-6"></i>
+                <h2 className="text-5xl font-bold mb-4">
+                  报告<span className="text-primary">生成完成</span>
+                </h2>
+                <p className="text-xl text-muted-foreground">Report Generation Complete</p>
+              </div>
+              <Card className="p-6 bg-secondary/30 border-border max-w-2xl mx-auto mb-8">
+                <div className="grid grid-cols-3 gap-6">
+                  <div>
+                    <div className="text-3xl font-bold text-primary">{completionData?.chapters ?? 7}</div>
+                    <div className="text-sm text-muted-foreground">章节完成</div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-bold text-primary">{completionData?.chapters ?? 7}</div>
+                    <div className="text-sm text-muted-foreground">Agent执行</div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-bold text-primary">{completionData?.elapsed ? Math.ceil(completionData.elapsed / 60) : "--"}</div>
+                    <div className="text-sm text-muted-foreground">分钟用时</div>
+                  </div>
+                </div>
+              </Card>
+              <div className="flex justify-center gap-4">
+                <Button onClick={() => router.push(`/report/${reportId}`)} size="lg" className="gap-2 text-lg px-8">
+                  <i className="fas fa-file-lines"></i>
+                  查看报告
+                </Button>
+                <Button onClick={() => router.push(`/chat/${reportId}`)} variant="outline" size="lg" className="gap-2 text-lg px-8 bg-transparent">
+                  <i className="fas fa-comments"></i>
+                  开始问答
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
+  // ─── Generating state ───
+  if (isGenerating) {
+    const chapters = ["市场与客群洞察", "竞品分析与我方策略", "退货报告分析", "Listing全面优化方案", "产品及周边优化建议", "关联场景词/产品拓展", "报告总结"]
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-6 py-24">
+          <Card className="p-8 bg-card border-border">
+            <h2 className="text-3xl font-bold mb-6 text-center">正在生成报告...</h2>
+            <div className="mb-12">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-lg font-semibold">总体进度</span>
+                <span className="metric-large text-4xl">{Math.round(progress)}%</span>
+              </div>
+              <div className="w-full bg-secondary rounded-full h-4">
+                <div className="bg-primary h-4 rounded-full transition-all duration-500 relative overflow-hidden" style={{ width: `${progress}%` }}>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold mb-4">Agent 状态</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {chapters.map((chapter, index) => {
+                  const status = chapterStatuses[index] || "pending"
+                  return (
+                    <Card key={index} className={`p-4 border-2 transition-all ${status === "completed" ? "border-primary bg-primary/10" : status === "processing" ? "border-chart-2 bg-chart-2/10" : "border-border bg-card"}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold">{chapter}</span>
+                        {status === "completed" && <i className="fas fa-check text-primary"></i>}
+                        {status === "processing" && <i className="fas fa-spinner fa-spin text-chart-2"></i>}
+                        {status === "pending" && <i className="fas fa-clock text-muted-foreground"></i>}
+                      </div>
+                      <div className="w-full bg-secondary rounded-full h-1.5">
+                        <div className={`h-1.5 rounded-full transition-all duration-500 ${status === "completed" ? "bg-primary" : "bg-chart-2"}`} style={{ width: `${status === "completed" ? 100 : status === "processing" ? 50 : 0}%` }} />
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="mt-8">
+              <h3 className="text-xl font-semibold mb-4">实时日志</h3>
+              <Card className="p-4 bg-secondary/30 border-border max-h-48 overflow-y-auto font-mono text-sm" id="log-container">
+                <div className="space-y-1 text-muted-foreground">
+                  {logs.length === 0 && <div>等待连接...</div>}
+                  {logs.map((log, i) => (
+                    <div key={i} className={log.error ? "text-red-500" : log.message.startsWith("✅") ? "text-primary" : ""}>
+                      [{log.time}] {log.message}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
+  // ─── Form state ───
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
 
       <main className="container mx-auto px-6 py-24">
         {/* Header */}
-        <div className="mb-12">
+        <div className="mb-10">
           <h1 className="text-5xl md:text-6xl font-bold mb-4">
-            新建
-            <span className="text-primary">报告</span>
+            新建<span className="text-primary">报告</span>
           </h1>
-          <p className="text-xl text-muted-foreground">Create New Analysis Report</p>
+          <p className="text-xl text-muted-foreground">输入ASIN一键生成深度竞品分析报告</p>
         </div>
 
-        {/* Step Indicator */}
-        <div className="mb-12">
-          <div className="flex items-center justify-between relative">
-            {/* Progress Line */}
-            <div className="absolute top-6 left-0 right-0 h-0.5 bg-border -z-10">
-              <div
-                className="h-full bg-primary transition-all duration-500"
-                style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
-              />
-            </div>
+        <div className="space-y-8">
+          {/* ── Section 1: ASIN 输入 ── */}
+          <Card className="p-8 bg-card border-border">
+            <h2 className="text-2xl font-bold mb-1">
+              <i className="fas fa-barcode text-primary mr-3"></i>
+              产品信息
+            </h2>
+            <p className="text-muted-foreground mb-6 ml-9">输入要分析的核心产品和竞品的 ASIN</p>
 
-            {steps.map((step) => (
-              <div key={step.number} className="flex flex-col items-center">
-                <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg mb-2 transition-all ${
-                    currentStep >= step.number
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-muted-foreground"
-                  }`}
-                >
-                  {currentStep > step.number ? <i className="fas fa-check"></i> : step.number}
-                </div>
-                <div className="text-center">
-                  <div className="text-sm font-semibold">{step.title}</div>
-                  <div className="text-xs text-muted-foreground">{step.subtitle}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Step Content */}
-        <Card className="p-8 bg-card border-border">
-          {/* Step 1: File Upload */}
-          {currentStep === 1 && (
-            <div>
-              <h2 className="text-3xl font-bold mb-6">上传分析文件</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Main Product File */}
-                <div>
-                  <Label className="text-lg mb-3 block">
-                    主品文件 <span className="text-primary">*</span>
-                  </Label>
-                  <div
-                    className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-all cursor-pointer bg-secondary/30"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop("main", e)}
-                    onClick={() => document.getElementById("main-file")?.click()}
-                  >
-                    <input
-                      id="main-file"
-                      type="file"
-                      className="hidden"
-                      accept=".xlsx,.csv,.json,.pdf,.txt"
-                      onChange={(e) => handleFileUpload("main", e)}
-                    />
-                    {mainProductFile ? (
-                      <div>
-                        <i className="fas fa-file-check text-4xl text-primary mb-3"></i>
-                        <p className="font-semibold">{mainProductFile.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {(mainProductFile.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
-                      </div>
-                    ) : (
-                      <div>
-                        <i className="fas fa-cloud-arrow-up text-5xl text-muted-foreground mb-3"></i>
-                        <p className="font-semibold mb-2">拖拽文件或点击上传</p>
-                        <p className="text-sm text-muted-foreground">支持 Excel, CSV, JSON, PDF, TXT</p>
-                        <p className="text-xs text-muted-foreground mt-2">最大 50MB</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Competitor File */}
-                <div>
-                  <Label className="text-lg mb-3 block">
-                    竞品文件 <span className="text-primary">*</span>
-                  </Label>
-                  <div
-                    className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-all cursor-pointer bg-secondary/30"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop("competitor", e)}
-                    onClick={() => document.getElementById("competitor-file")?.click()}
-                  >
-                    <input
-                      id="competitor-file"
-                      type="file"
-                      className="hidden"
-                      accept=".xlsx,.csv,.json,.pdf,.txt"
-                      onChange={(e) => handleFileUpload("competitor", e)}
-                    />
-                    {competitorFile ? (
-                      <div>
-                        <i className="fas fa-file-check text-4xl text-primary mb-3"></i>
-                        <p className="font-semibold">{competitorFile.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {(competitorFile.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
-                      </div>
-                    ) : (
-                      <div>
-                        <i className="fas fa-cloud-arrow-up text-5xl text-muted-foreground mb-3"></i>
-                        <p className="font-semibold mb-2">拖拽文件或点击上传</p>
-                        <p className="text-sm text-muted-foreground">支持 Excel, CSV, JSON, PDF, TXT</p>
-                        <p className="text-xs text-muted-foreground mt-2">最大 50MB</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <Label className="text-base mb-2 block">
+                  核心产品 ASIN <span className="text-primary">*</span>
+                </Label>
+                <p className="text-sm text-muted-foreground mb-3">输入1-5个同产品（变体）的ASIN</p>
+                <Textarea
+                  placeholder={"输入核心产品ASIN（例如：B08CVS825S）\n每行一个..."}
+                  value={coreAsins}
+                  onChange={(e) => setCoreAsins(e.target.value)}
+                  className="min-h-36 bg-secondary/50 font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  已输入 {coreAsins.split("\n").filter(l => l.trim()).length} 个 ASIN
+                </p>
               </div>
 
-              <div className="flex justify-end gap-4 mt-8">
-                <Button variant="outline" onClick={() => router.push("/dashboard")} className="bg-transparent">
-                  取消
-                </Button>
-                <Button onClick={() => setCurrentStep(2)} disabled={!canProceedFromStep1} className="gap-2">
-                  下一步
-                  <i className="fas fa-arrow-right"></i>
-                </Button>
+              <div>
+                <Label className="text-base mb-2 block">
+                  竞品 ASIN <span className="text-primary">*</span>
+                </Label>
+                <p className="text-sm text-muted-foreground mb-3">输入竞品ASIN，推荐5-15个</p>
+                <Textarea
+                  placeholder={"输入竞品ASIN（每行一个）\n推荐输入5-15个..."}
+                  value={competitorAsins}
+                  onChange={(e) => setCompetitorAsins(e.target.value)}
+                  className="min-h-36 bg-secondary/50 font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  已输入 {competitorAsins.split("\n").filter(l => l.trim()).length} 个 ASIN
+                </p>
               </div>
             </div>
-          )}
 
-          {/* Step 2: Configuration */}
-          {currentStep === 2 && (
-            <div>
-              <h2 className="text-3xl font-bold mb-6">配置报告选项</h2>
+            <div className="mt-6">
+              <Label className="text-base mb-2 block">
+                市场站点 <span className="text-primary">*</span>
+              </Label>
+              <Select value={marketplace} onValueChange={setMarketplace}>
+                <SelectTrigger className="w-60 bg-secondary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="US">🇺🇸 美国 (US)</SelectItem>
+                  <SelectItem value="CA">🇨🇦 加拿大 (CA)</SelectItem>
+                  <SelectItem value="GB">🇬🇧 英国 (GB)</SelectItem>
+                  <SelectItem value="DE">🇩🇪 德国 (DE)</SelectItem>
+                  <SelectItem value="FR">🇫🇷 法国 (FR)</SelectItem>
+                  <SelectItem value="IT">🇮🇹 意大利 (IT)</SelectItem>
+                  <SelectItem value="ES">🇪🇸 西班牙 (ES)</SelectItem>
+                  <SelectItem value="JP">🇯🇵 日本 (JP)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </Card>
 
-              <div className="space-y-6">
-                {/* Report Title */}
+          {/* ── Section 2: 分析配置 ── */}
+          <Card className="p-8 bg-card border-border">
+            <h2 className="text-2xl font-bold mb-1">
+              <i className="fas fa-sliders text-primary mr-3"></i>
+              分析配置
+            </h2>
+            <p className="text-muted-foreground mb-6 ml-9">配置报告生成的各项参数</p>
+
+            <div className="space-y-6">
+              {/* Report Title */}
+              <div>
+                <Label htmlFor="title" className="text-base mb-2 block">
+                  报告标题 <span className="text-primary">*</span>
+                </Label>
+                <Input
+                  id="title"
+                  placeholder="例如: 猫砂盆竞品深度分析"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="text-base bg-secondary/50"
+                />
+              </div>
+
+              {/* Language & LLM Model */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <Label htmlFor="title" className="text-lg mb-2 block">
-                    报告标题 <span className="text-primary">*</span>
-                  </Label>
-                  <Input
-                    id="title"
-                    placeholder="例如: 特斯拉 vs 蔚来竞品分析"
-                    value={reportConfig.title}
-                    onChange={(e) => setReportConfig({ ...reportConfig, title: e.target.value })}
-                    className="text-lg bg-secondary/50"
-                  />
-                </div>
-
-                {/* Chapter Selection */}
-                <div>
-                  <Label className="text-lg mb-3 block">
-                    选择章节 <span className="text-primary">*</span>
-                  </Label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {chapters.map((chapter, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center space-x-2 p-3 bg-secondary/50 rounded-lg hover:bg-secondary transition-all"
-                      >
-                        <Checkbox
-                          id={`chapter-${index}`}
-                          checked={reportConfig.selectedChapters.includes(chapter)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setReportConfig({
-                                ...reportConfig,
-                                selectedChapters: [...reportConfig.selectedChapters, chapter],
-                              })
-                            } else {
-                              setReportConfig({
-                                ...reportConfig,
-                                selectedChapters: reportConfig.selectedChapters.filter((c) => c !== chapter),
-                              })
-                            }
-                          }}
-                        />
-                        <label htmlFor={`chapter-${index}`} className="text-sm font-medium cursor-pointer flex-1">
-                          {chapter}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    已选择 {reportConfig.selectedChapters.length} / {chapters.length} 个章节
-                  </p>
-                </div>
-
-                {/* LLM Model */}
-                <div>
-                  <Label htmlFor="llm" className="text-lg mb-2 block">
-                    LLM模型
-                  </Label>
-                  <Select
-                    value={reportConfig.llmModel}
-                    onValueChange={(value) => setReportConfig({ ...reportConfig, llmModel: value })}
-                  >
-                    <SelectTrigger id="llm" className="bg-secondary/50">
+                  <Label className="text-base mb-2 block">报告语言</Label>
+                  <Select value={language} onValueChange={setLanguage}>
+                    <SelectTrigger className="bg-secondary/50">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4">GPT-4</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
-                      <SelectItem value="claude-3">Claude 3</SelectItem>
+                      <SelectItem value="zh">中文</SelectItem>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="ja">日本語</SelectItem>
+                      <SelectItem value="de">Deutsch</SelectItem>
+                      <SelectItem value="fr">Français</SelectItem>
+                      <SelectItem value="it">Italiano</SelectItem>
+                      <SelectItem value="es">Español</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Custom Instructions */}
                 <div>
-                  <Label htmlFor="instructions" className="text-lg mb-2 block">
-                    自定义指令 (可选)
+                  <Label className="text-base mb-2 block">LLM 模型</Label>
+                  <Select value={llmModel} onValueChange={setLlmModel}>
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="claude-3.5-sonnet">Claude 3.5 Sonnet</SelectItem>
+                      <SelectItem value="claude-3-opus">Claude 3 Opus</SelectItem>
+                      <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
+                      <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash</SelectItem>
+                      <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Reference Counts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label className="text-base mb-2 block">参考网站数量</Label>
+                  <Select value={websiteCount} onValueChange={setWebsiteCount}>
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10 个网站</SelectItem>
+                      <SelectItem value="20">20 个网站</SelectItem>
+                      <SelectItem value="30">30 个网站</SelectItem>
+                      <SelectItem value="40">40 个网站</SelectItem>
+                      <SelectItem value="50">50 个网站</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-base mb-2 block">参考 YouTube 数量</Label>
+                  <Select value={youtubeCount} onValueChange={setYoutubeCount}>
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10 个视频</SelectItem>
+                      <SelectItem value="20">20 个视频</SelectItem>
+                      <SelectItem value="30">30 个视频</SelectItem>
+                      <SelectItem value="40">40 个视频</SelectItem>
+                      <SelectItem value="50">50 个视频</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* File Uploads */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label className="text-base mb-2 block">
+                    亚马逊退货报告 <span className="text-xs text-muted-foreground font-normal">(可选)</span>
                   </Label>
-                  <Textarea
-                    id="instructions"
-                    placeholder="输入特定的分析要求或关注点..."
-                    value={reportConfig.customInstructions}
-                    onChange={(e) => setReportConfig({ ...reportConfig, customInstructions: e.target.value })}
-                    className="min-h-32 bg-secondary/50"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-between gap-4 mt-8">
-                <Button variant="outline" onClick={() => setCurrentStep(1)} className="gap-2 bg-transparent">
-                  <i className="fas fa-arrow-left"></i>
-                  上一步
-                </Button>
-                <Button onClick={startGeneration} disabled={!canProceedFromStep2} className="gap-2">
-                  开始生成
-                  <i className="fas fa-rocket"></i>
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Progress Monitoring */}
-          {currentStep === 3 && (
-            <div>
-              <h2 className="text-3xl font-bold mb-6 text-center">正在生成报告...</h2>
-
-              {/* Overall Progress */}
-              <div className="mb-12">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-lg font-semibold">总体进度</span>
-                  <span className="metric-large text-4xl">{Math.round(progress)}%</span>
-                </div>
-                <div className="w-full bg-secondary rounded-full h-4">
                   <div
-                    className="bg-primary h-4 rounded-full transition-all duration-500 relative overflow-hidden"
-                    style={{ width: `${progress}%` }}
+                    className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-all cursor-pointer bg-secondary/30"
+                    onClick={() => document.getElementById("returns-file")?.click()}
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+                    <input id="returns-file" type="file" className="hidden" accept=".csv,.xlsx" onChange={(e) => handleFileUpload("returns", e)} />
+                    {returnsFile ? (
+                      <div>
+                        <i className="fas fa-file-check text-3xl text-primary mb-2"></i>
+                        <p className="font-semibold text-sm">{returnsFile.name}</p>
+                        <p className="text-xs text-muted-foreground">{(returnsFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <i className="fas fa-cloud-arrow-up text-3xl text-muted-foreground mb-2"></i>
+                        <p className="font-semibold text-sm mb-1">点击上传文件</p>
+                        <p className="text-xs text-muted-foreground">支持 CSV, XLSX</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-base mb-2 block">
+                    店铺受众画像 <span className="text-xs text-muted-foreground font-normal">(可选)</span>
+                  </Label>
+                  <div
+                    className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-all cursor-pointer bg-secondary/30"
+                    onClick={() => document.getElementById("audience-file")?.click()}
+                  >
+                    <input id="audience-file" type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={(e) => handleFileUpload("audience", e)} />
+                    {audienceFile ? (
+                      <div>
+                        <i className="fas fa-file-check text-3xl text-primary mb-2"></i>
+                        <p className="font-semibold text-sm">{audienceFile.name}</p>
+                        <p className="text-xs text-muted-foreground">{(audienceFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <i className="fas fa-cloud-arrow-up text-3xl text-muted-foreground mb-2"></i>
+                        <p className="font-semibold text-sm mb-1">点击上传文件</p>
+                        <p className="text-xs text-muted-foreground">支持 PDF, DOC, DOCX</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Agent Status Grid */}
+              {/* Custom Prompt - Tabbed */}
               <div>
-                <h3 className="text-xl font-semibold mb-4">Agent 状态</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {chapters.slice(0, reportConfig.selectedChapters.length).map((chapter, index) => {
-                    const agentProgress = Math.min(100, Math.max(0, (progress - index * 9) * (100 / (100 - index * 9))))
-                    const status = agentProgress >= 100 ? "completed" : agentProgress > 0 ? "processing" : "pending"
-
-                    return (
-                      <Card
-                        key={index}
-                        className={`p-4 border-2 transition-all ${
-                          status === "completed"
-                            ? "border-primary bg-primary/10"
-                            : status === "processing"
-                              ? "border-chart-2 bg-chart-2/10"
-                              : "border-border bg-card"
+                <Label className="text-base mb-3 block">
+                  自定义 Prompt <span className="text-xs text-muted-foreground font-normal">(可选)</span>
+                </Label>
+                <div className="flex gap-1 mb-3">
+                  {(["A", "B", "C"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setCustomPromptTab(tab)}
+                      className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${customPromptTab === tab
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-muted-foreground hover:bg-secondary/80"
                         }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold">{chapter}</span>
-                          {status === "completed" && <i className="fas fa-check text-primary"></i>}
-                          {status === "processing" && <i className="fas fa-spinner fa-spin text-chart-2"></i>}
-                          {status === "pending" && <i className="fas fa-clock text-muted-foreground"></i>}
-                        </div>
-                        <div className="w-full bg-secondary rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full transition-all duration-500 ${
-                              status === "completed" ? "bg-primary" : "bg-chart-2"
-                            }`}
-                            style={{ width: `${agentProgress}%` }}
-                          />
-                        </div>
-                      </Card>
-                    )
-                  })}
+                    >
+                      Prompt {tab}
+                    </button>
+                  ))}
                 </div>
-              </div>
-
-              {/* Live Logs */}
-              <div className="mt-8">
-                <h3 className="text-xl font-semibold mb-4">实时日志</h3>
-                <Card className="p-4 bg-secondary/30 border-border max-h-48 overflow-y-auto font-mono text-sm">
-                  <div className="space-y-1 text-muted-foreground">
-                    <div>[{new Date().toLocaleTimeString()}] 初始化 LangGraph 工作流...</div>
-                    <div>[{new Date().toLocaleTimeString()}] 解析文件数据...</div>
-                    <div>[{new Date().toLocaleTimeString()}] 启动 Agent 协调器...</div>
-                    <div className="text-primary">[{new Date().toLocaleTimeString()}] 生成中...</div>
-                  </div>
-                </Card>
+                <Textarea
+                  placeholder={`输入自定义 Prompt ${customPromptTab}...`}
+                  value={currentPrompt}
+                  onChange={(e) => setCurrentPrompt(e.target.value)}
+                  className="min-h-32 bg-secondary/50"
+                />
               </div>
             </div>
-          )}
+          </Card>
 
-          {/* Step 5: Complete */}
-          {currentStep === 5 && (
-            <div className="text-center py-12">
-              <div className="mb-8">
-                <i className="fas fa-circle-check text-primary text-8xl mb-6"></i>
-                <h2 className="text-5xl font-bold mb-4">
-                  报告
-                  <span className="text-primary">生成完成</span>
-                </h2>
-                <p className="text-xl text-muted-foreground">Report Generation Complete</p>
-              </div>
 
-              <Card className="p-6 bg-secondary/30 border-border max-w-2xl mx-auto mb-8">
-                <div className="grid grid-cols-3 gap-6">
-                  <div>
-                    <div className="text-3xl font-bold text-primary">{reportConfig.selectedChapters.length}</div>
-                    <div className="text-sm text-muted-foreground">章节完成</div>
-                  </div>
-                  <div>
-                    <div className="text-3xl font-bold text-primary">11</div>
-                    <div className="text-sm text-muted-foreground">Agent执行</div>
-                  </div>
-                  <div>
-                    <div className="text-3xl font-bold text-primary">45</div>
-                    <div className="text-sm text-muted-foreground">分钟用时</div>
-                  </div>
-                </div>
-              </Card>
-
-              <div className="flex justify-center gap-4">
-                <Button onClick={() => router.push(`/report/${reportId}`)} size="lg" className="gap-2 text-lg px-8">
-                  <i className="fas fa-file-lines"></i>
-                  查看报告
-                </Button>
-                <Button
-                  onClick={() => router.push(`/chat/${reportId}`)}
-                  variant="outline"
-                  size="lg"
-                  className="gap-2 text-lg px-8 bg-transparent"
-                >
-                  <i className="fas fa-comments"></i>
-                  开始问答
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
+          {/* ── Submit ── */}
+          <div className="flex justify-end gap-4">
+            <Button variant="outline" onClick={() => router.push("/dashboard")} className="bg-transparent px-8">
+              取消
+            </Button>
+            <Button onClick={handleSubmit} disabled={!canSubmit} size="lg" className="gap-2 text-lg px-10">
+              <i className="fas fa-rocket"></i>
+              开始生成报告
+            </Button>
+          </div>
+        </div>
       </main>
     </div>
   )
