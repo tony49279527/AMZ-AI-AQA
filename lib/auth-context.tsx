@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, type ReactNode } from "react"
 
 export interface User {
   id: string
@@ -25,25 +25,24 @@ const USERS_STORAGE_KEY = "report_system_users"
 const CURRENT_USER_KEY = "report_system_current_user"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window === "undefined") return null
 
-  // Load current user on mount
-  useEffect(() => {
     const storedUser = localStorage.getItem(CURRENT_USER_KEY)
-    if (storedUser) {
-      try {
-        const parsed = JSON.parse(storedUser)
-        setUser({
-          ...parsed,
-          createdAt: new Date(parsed.createdAt),
-        })
-      } catch {
-        localStorage.removeItem(CURRENT_USER_KEY)
+    if (!storedUser) return null
+
+    try {
+      const parsed = JSON.parse(storedUser)
+      return {
+        ...parsed,
+        createdAt: new Date(parsed.createdAt),
       }
+    } catch {
+      localStorage.removeItem(CURRENT_USER_KEY)
+      return null
     }
-    setIsLoading(false)
-  }, [])
+  })
+  const [isLoading] = useState(false)
 
   // Get all registered users from localStorage
   const getUsers = (): Record<string, { password: string; user: User }> => {

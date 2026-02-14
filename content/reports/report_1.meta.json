@@ -1,0 +1,77 @@
+{
+  "reportId": "1",
+  "title": "AI竞品分析报告-猫砂盆-C4.5",
+  "coreAsins": [
+    "B0FMK94VY4"
+  ],
+  "competitorAsins": [
+    "B0DR3JP2FZ",
+    "B0DFM4Z71X",
+    "B0D8J5796M",
+    "B0FH21L9CF",
+    "B0F99576CF"
+  ],
+  "marketplace": "US",
+  "language": "中文",
+  "model": "unknown",
+  "websiteCount": 0,
+  "youtubeCount": 0,
+  "createdAt": "2026-02-14",
+  "updatedAt": "2026-02-14T12:15:50.579Z",
+  "dataFiles": [
+    {
+      "id": "legacy-core-1",
+      "category": "亚马逊数据",
+      "name": "Amazon Product Page (B0FMK94VY4)",
+      "size": "N/A",
+      "icon": "fa-shopping-cart text-slate-400",
+      "addedAt": "2026-02-14",
+      "source": "系统采集"
+    },
+    {
+      "id": "legacy-competitor-1",
+      "category": "竞品数据",
+      "name": "Competitor Analysis (B0DR3JP2FZ)",
+      "size": "N/A",
+      "icon": "fa-chart-line text-slate-400",
+      "addedAt": "2026-02-14",
+      "source": "系统采集"
+    },
+    {
+      "id": "legacy-competitor-2",
+      "category": "竞品数据",
+      "name": "Competitor Analysis (B0DFM4Z71X)",
+      "size": "N/A",
+      "icon": "fa-chart-line text-slate-400",
+      "addedAt": "2026-02-14",
+      "source": "系统采集"
+    },
+    {
+      "id": "legacy-competitor-3",
+      "category": "竞品数据",
+      "name": "Competitor Analysis (B0D8J5796M)",
+      "size": "N/A",
+      "icon": "fa-chart-line text-slate-400",
+      "addedAt": "2026-02-14",
+      "source": "系统采集"
+    },
+    {
+      "id": "legacy-competitor-4",
+      "category": "竞品数据",
+      "name": "Competitor Analysis (B0FH21L9CF)",
+      "size": "N/A",
+      "icon": "fa-chart-line text-slate-400",
+      "addedAt": "2026-02-14",
+      "source": "系统采集"
+    },
+    {
+      "id": "legacy-competitor-5",
+      "category": "竞品数据",
+      "name": "Competitor Analysis (B0F99576CF)",
+      "size": "N/A",
+      "icon": "fa-chart-line text-slate-400",
+      "addedAt": "2026-02-14",
+      "source": "系统采集"
+    }
+  ]
+}

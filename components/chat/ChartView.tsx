@@ -37,7 +37,7 @@ export function ChartView({ config }: { config: string }) {
 
     try {
         chartConfig = JSON.parse(config)
-    } catch (e) {
+    } catch {
         return (
             <div className="p-4 border border-red-200 bg-red-50 text-red-600 rounded-lg text-sm">
                 图表数据解析错误

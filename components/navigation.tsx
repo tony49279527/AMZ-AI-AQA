@@ -1,20 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
-import { useTheme } from "next-themes"
+import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { useState, useEffect } from "react"
 
 export function Navigation() {
   const pathname = usePathname()
-  const router = useRouter()
-  const { theme, setTheme, resolvedTheme } = useTheme()
-  const [showUserMenu, setShowUserMenu] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
 
   const links = [
     { href: "/dashboard", label: "全部报告", icon: "fa-chart-line" },

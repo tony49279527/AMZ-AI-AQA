@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
+import { buildClientApiHeaders } from "@/lib/client-api"
+import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 
 interface FileUpload {
   file: File | null
@@ -36,7 +38,7 @@ export default function NewReportPage() {
   const [marketplace, setMarketplace] = useState("US")
   const [title, setTitle] = useState("")
   const [language, setLanguage] = useState("zh")
-  const [llmModel, setLlmModel] = useState("claude-3.5-sonnet")
+  const [llmModel, setLlmModel] = useState("anthropic/claude-sonnet-4")
   const [websiteCount, setWebsiteCount] = useState("10")
   const [youtubeCount, setYoutubeCount] = useState("10")
   const [customPromptTab, setCustomPromptTab] = useState<"A" | "B" | "C">("A")
@@ -79,19 +81,23 @@ export default function NewReportPage() {
     try {
       const response = await fetch("/api/reports/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildClientApiHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           title,
           coreAsins,
           competitorAsins,
           marketplace,
           language,
+          model: llmModel,
+          websiteCount,
+          youtubeCount,
           customPrompt: currentPrompt,
         }),
       })
 
       if (!response.ok) {
-        addLog(`API 错误: ${response.status}`, true)
+        const apiError = await buildClientApiError(response, `API 错误: ${response.status}`)
+        addLog(formatClientErrorMessage(apiError, `API 错误: ${response.status}`), true)
         setIsGenerating(false)
         return
       }
@@ -105,6 +111,52 @@ export default function NewReportPage() {
 
       const decoder = new TextDecoder()
       let buffer = ""
+      let eventType = ""
+      let didComplete = false
+
+      const processLine = (line: string) => {
+        const trimmed = line.trim()
+        if (!trimmed) return
+
+        if (trimmed.startsWith("event: ")) {
+          eventType = trimmed.slice(7)
+          return
+        }
+
+        if (!trimmed.startsWith("data: ") || !eventType) return
+
+        try {
+          const data = JSON.parse(trimmed.slice(6))
+
+          switch (eventType) {
+            case "init":
+              setReportId(data.reportId)
+              addLog(`报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
+              break
+            case "progress":
+              setProgress(data.overallProgress)
+              setChapterStatuses(prev => ({ ...prev, [data.chapter]: data.status }))
+              break
+            case "log":
+              addLog(data.message, data.error)
+              break
+            case "complete":
+              didComplete = true
+              setProgress(100)
+              setCompletionData({ chapters: data.chapters, elapsed: data.elapsed })
+              addLog(`✅ 报告生成完成! 共 ${data.chapters} 章，耗时 ${data.elapsed} 秒`)
+              setTimeout(() => {
+                setIsGenerating(false)
+                setIsComplete(true)
+              }, 1000)
+              break
+          }
+        } catch {
+          // skip malformed JSON
+        } finally {
+          eventType = ""
+        }
+      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -114,43 +166,22 @@ export default function NewReportPage() {
         const lines = buffer.split("\n")
         buffer = lines.pop() || ""
 
-        let eventType = ""
         for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7)
-          } else if (line.startsWith("data: ") && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6))
-
-              switch (eventType) {
-                case "init":
-                  setReportId(data.reportId)
-                  addLog(`报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
-                  break
-                case "progress":
-                  setProgress(data.overallProgress)
-                  setChapterStatuses(prev => ({ ...prev, [data.chapter]: data.status }))
-                  break
-                case "log":
-                  addLog(data.message, data.error)
-                  break
-                case "complete":
-                  setProgress(100)
-                  setCompletionData({ chapters: data.chapters, elapsed: data.elapsed })
-                  addLog(`✅ 报告生成完成! 共 ${data.chapters} 章，耗时 ${data.elapsed} 秒`)
-                  setTimeout(() => {
-                    setIsGenerating(false)
-                    setIsComplete(true)
-                  }, 1000)
-                  break
-              }
-            } catch { /* skip malformed JSON */ }
-            eventType = ""
-          }
+          processLine(line)
         }
       }
+
+      if (buffer) {
+        processLine(buffer)
+      }
+
+      if (!didComplete) {
+        addLog("⚠️ 连接已结束，但未收到完成信号。请检查后端日志后重试。", true)
+        setIsGenerating(false)
+      }
     } catch (error) {
-      addLog(`网络错误: ${error instanceof Error ? error.message : "Unknown"}`, true)
+      const message = formatClientErrorMessage(error, "网络错误: Unknown")
+      addLog(`网络错误: ${message}`, true)
       setIsGenerating(false)
     }
   }
@@ -398,12 +429,12 @@ export default function NewReportPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="claude-3.5-sonnet">Claude 3.5 Sonnet</SelectItem>
-                      <SelectItem value="claude-3-opus">Claude 3 Opus</SelectItem>
-                      <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
-                      <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash</SelectItem>
-                      <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                      <SelectItem value="anthropic/claude-sonnet-4">Claude Sonnet 4</SelectItem>
+                      <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
+                      <SelectItem value="google/gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
+                      <SelectItem value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</SelectItem>
+                      <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
+                      <SelectItem value="openai/gpt-4-turbo">GPT-4 Turbo</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

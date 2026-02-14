@@ -11,8 +11,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import Link from "next/link"
-import type { Report, SystemStatus } from "@/lib/types"
+import type { Report } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { buildClientApiHeaders } from "@/lib/client-api"
+import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 
 type TabId = "all" | "mine" | "featured"
 type ViewMode = "grid" | "list"
@@ -23,15 +25,6 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "oldest", label: "最早创建" },
   { value: "name-asc", label: "按名称 A-Z" },
   { value: "name-desc", label: "按名称 Z-A" },
-]
-
-// 报告图标集合
-const reportIcons = [
-  "fa-chart-line",
-  "fa-mobile-screen-button",
-  "fa-comments",
-  "fa-lightbulb",
-  "fa-rocket",
 ]
 
 // 统一的报告图标样式 (Professional Blue/Slate Theme)
@@ -64,24 +57,30 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   const [recentReports, setRecentReports] = useState<Report[]>([])
+  const [loadError, setLoadError] = useState("")
 
   // 从 API 加载真实报告列表
   useEffect(() => {
     async function loadReports() {
       try {
-        const response = await fetch("/api/reports")
-        if (response.ok) {
-          const data = await response.json()
-          setRecentReports(
-            data.reports.map((r: Record<string, unknown>) => ({
-              ...r,
-              createdAt: new Date(r.createdAt as string),
-              updatedAt: new Date(r.updatedAt as string),
-            }))
-          )
+        const response = await fetch("/api/reports", {
+          headers: buildClientApiHeaders(),
+        })
+        if (!response.ok) {
+          throw await buildClientApiError(response, `加载报告失败 (HTTP ${response.status})`)
         }
+
+        const data = await response.json()
+        setRecentReports(
+          data.reports.map((r: Record<string, unknown>) => ({
+            ...r,
+            createdAt: new Date(r.createdAt as string),
+            updatedAt: new Date(r.updatedAt as string),
+          }))
+        )
       } catch (error) {
         console.error("Failed to load reports:", error)
+        setLoadError(formatClientErrorMessage(error, "加载报告失败，请稍后重试"))
       } finally {
         setIsLoading(false)
       }
@@ -118,7 +117,7 @@ export default function DashboardPage() {
   })
 
   // 渲染统一的报告卡片
-  const renderReportCard = (report: Report, index: number, showBadge: boolean = false) => {
+  const renderReportCard = (report: Report, showBadge: boolean = false) => {
     return (
       <Link key={report.id} href={`/report/${report.id}`} className="group">
         <div className={cn(
@@ -258,6 +257,13 @@ export default function DashboardPage() {
           </div>
 
           {/* 加载中骨架屏 */}
+          {loadError && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {loadError}
+            </div>
+          )}
+
+          {/* 加载中骨架屏 */}
           {isLoading && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
               {[1, 2, 3, 4].map((i) => (
@@ -298,11 +304,11 @@ export default function DashboardPage() {
 
               {viewMode === "grid" ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {recentReports.slice(0, 4).map((report, i) => renderReportCard(report, i, true))}
+                  {recentReports.slice(0, 4).map((report) => renderReportCard(report, true))}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recentReports.slice(0, 4).map((report, i) => {
+                  {recentReports.slice(0, 4).map((report) => {
                     return (
                       <Link key={report.id} href={`/report/${report.id}`} className="block group">
                         <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
@@ -395,7 +401,7 @@ export default function DashboardPage() {
                   </Link>
 
                   {/* 报告卡片 (Grid) */}
-                  {sortedReports.map((report, i) => renderReportCard(report, i, false))}
+                  {sortedReports.map((report) => renderReportCard(report, false))}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -415,7 +421,7 @@ export default function DashboardPage() {
                   </Link>
 
                   {/* 报告列表项 (List) */}
-                  {sortedReports.map((report, i) => {
+                  {sortedReports.map((report) => {
                     return (
                       <Link key={report.id} href={`/report/${report.id}`} className="block group">
                         <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">

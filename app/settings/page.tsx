@@ -11,52 +11,99 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 
-export default function SettingsPage() {
-  const defaultSettings = {
-    llm: {
-      defaultModel: "google/gemini-2.0-flash-001",
-      temperature: 0.7,
-      maxTokens: 4096,
-      apiKey: "sk-*********************",
-    },
-    agents: {
-      marketAnalysis: { enabled: true, priority: "high", timeout: 300 },
-      competitorAnalysis: { enabled: true, priority: "high", timeout: 300 },
-      productFeatures: { enabled: true, priority: "medium", timeout: 240 },
-      pricingStrategy: { enabled: true, priority: "medium", timeout: 240 },
-      customerInsights: { enabled: true, priority: "medium", timeout: 240 },
-      swotAnalysis: { enabled: true, priority: "low", timeout: 180 },
-      growthOpportunities: { enabled: true, priority: "low", timeout: 180 },
-      riskAssessment: { enabled: true, priority: "low", timeout: 180 },
-      recommendations: { enabled: true, priority: "high", timeout: 300 },
-      executiveSummary: { enabled: true, priority: "high", timeout: 300 },
-      dataSynthesis: { enabled: true, priority: "medium", timeout: 240 },
-    },
-    dataSources: {
-      youtubeApiKey: "AIza*********************",
-      youtubeEnabled: true,
-      amazonApiKey: "AKIA*********************",
-      amazonEnabled: true,
-    },
-    notifications: {
-      emailEnabled: true,
-      email: "user@example.com",
-      webhookEnabled: false,
-      webhookUrl: "",
-    },
-    appearance: {
-      theme: "dark",
-      compactMode: false,
-    },
-  }
+type AgentPriority = "high" | "medium" | "low"
 
+type AgentConfig = {
+  enabled: boolean
+  priority: AgentPriority
+  timeout: number
+}
+
+type AppSettings = {
+  llm: {
+    defaultModel: string
+    temperature: number
+    maxTokens: number
+    apiKey: string
+  }
+  agents: Record<string, AgentConfig>
+  dataSources: {
+    youtubeApiKey: string
+    youtubeEnabled: boolean
+    amazonApiKey: string
+    amazonEnabled: boolean
+  }
+  notifications: {
+    emailEnabled: boolean
+    email: string
+    webhookEnabled: boolean
+    webhookUrl: string
+  }
+  appearance: {
+    theme: string
+    compactMode: boolean
+  }
+}
+
+const defaultSettings: AppSettings = {
+  llm: {
+    defaultModel: "google/gemini-2.0-flash-001",
+    temperature: 0.7,
+    maxTokens: 4096,
+    apiKey: "sk-*********************",
+  },
+  agents: {
+    marketAnalysis: { enabled: true, priority: "high", timeout: 300 },
+    competitorAnalysis: { enabled: true, priority: "high", timeout: 300 },
+    productFeatures: { enabled: true, priority: "medium", timeout: 240 },
+    pricingStrategy: { enabled: true, priority: "medium", timeout: 240 },
+    customerInsights: { enabled: true, priority: "medium", timeout: 240 },
+    swotAnalysis: { enabled: true, priority: "low", timeout: 180 },
+    growthOpportunities: { enabled: true, priority: "low", timeout: 180 },
+    riskAssessment: { enabled: true, priority: "low", timeout: 180 },
+    recommendations: { enabled: true, priority: "high", timeout: 300 },
+    executiveSummary: { enabled: true, priority: "high", timeout: 300 },
+    dataSynthesis: { enabled: true, priority: "medium", timeout: 240 },
+  },
+  dataSources: {
+    youtubeApiKey: "AIza*********************",
+    youtubeEnabled: true,
+    amazonApiKey: "AKIA*********************",
+    amazonEnabled: true,
+  },
+  notifications: {
+    emailEnabled: true,
+    email: "user@example.com",
+    webhookEnabled: false,
+    webhookUrl: "",
+  },
+  appearance: {
+    theme: "dark",
+    compactMode: false,
+  },
+}
+
+function mergeSettings(partial: Partial<AppSettings>): AppSettings {
+  return {
+    ...defaultSettings,
+    ...partial,
+    llm: { ...defaultSettings.llm, ...partial.llm },
+    agents: { ...defaultSettings.agents, ...partial.agents },
+    dataSources: { ...defaultSettings.dataSources, ...partial.dataSources },
+    notifications: { ...defaultSettings.notifications, ...partial.notifications },
+    appearance: { ...defaultSettings.appearance, ...partial.appearance },
+  }
+}
+
+export default function SettingsPage() {
   // 从 localStorage 加载设置（如果存在）
-  const [settings, setSettings] = useState(() => {
+  const [settings, setSettings] = useState<AppSettings>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("app_settings")
       if (stored) {
         try {
-          return { ...defaultSettings, ...JSON.parse(stored) }
+          const parsed = JSON.parse(stored) as Partial<AppSettings>
+          return mergeSettings(parsed)
         } catch {
           return defaultSettings
         }

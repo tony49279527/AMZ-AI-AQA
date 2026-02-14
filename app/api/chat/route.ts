@@ -1,11 +1,66 @@
 import { NextRequest } from "next/server"
 import fs from "fs"
-import path from "path"
+import { enforceApiGuard } from "@/lib/server/api-guard"
+import { apiError, withApiAudit } from "@/lib/server/api-response"
+import { getReportFilePath, isValidReportId } from "@/lib/server/report-storage"
+
+type ChatInputMessage = { role: "user" | "assistant"; content: string }
+
+type ReportSection = {
+    title: string
+    content: string
+}
+
+type RetrievedContext = {
+    totalSections: number
+    selectedSections: ReportSection[]
+}
+
+const MAX_MESSAGES = 20
+const MAX_MESSAGE_LENGTH = 4000
+const MAX_TOTAL_MESSAGE_CHARS = 24_000
+
+function normalizeModel(model: unknown): string | null {
+    if (typeof model !== "string") return null
+    const trimmed = model.trim()
+    if (!trimmed) return null
+    if (!/^[a-zA-Z0-9._/-]{1,100}$/.test(trimmed)) return null
+    return trimmed
+}
+
+function normalizeInputMessages(input: unknown): ChatInputMessage[] | null {
+    if (!Array.isArray(input) || input.length === 0 || input.length > MAX_MESSAGES) {
+        return null
+    }
+
+    const normalized: ChatInputMessage[] = []
+    let totalChars = 0
+
+    for (const item of input) {
+        if (!item || typeof item !== "object") return null
+        const record = item as Record<string, unknown>
+
+        const role = record.role
+        if (role !== "user" && role !== "assistant") return null
+
+        const contentRaw = record.content
+        if (typeof contentRaw !== "string") return null
+        const content = contentRaw.trim()
+        if (!content || content.length > MAX_MESSAGE_LENGTH) return null
+
+        totalChars += content.length
+        if (totalChars > MAX_TOTAL_MESSAGE_CHARS) return null
+
+        normalized.push({ role, content })
+    }
+
+    return normalized
+}
 
 // 加载报告 Markdown 内容
 function loadReportContent(reportId: string): string | null {
     try {
-        const filePath = path.join(process.cwd(), "content", "reports", `report_${reportId}.md`)
+        const filePath = getReportFilePath(reportId)
         if (fs.existsSync(filePath)) {
             return fs.readFileSync(filePath, "utf-8")
         }
@@ -15,8 +70,118 @@ function loadReportContent(reportId: string): string | null {
     }
 }
 
+function parseReportSections(reportContent: string): ReportSection[] {
+    const lines = reportContent.split("\n")
+    const sections: ReportSection[] = []
+
+    let currentTitle = "报告概览"
+    let currentBody: string[] = []
+
+    for (const line of lines) {
+        if (line.startsWith("## ")) {
+            if (currentBody.join("\n").trim()) {
+                sections.push({
+                    title: currentTitle,
+                    content: currentBody.join("\n").trim(),
+                })
+            }
+            currentTitle = line.replace(/^##\s+/, "").trim()
+            currentBody = []
+        } else {
+            currentBody.push(line)
+        }
+    }
+
+    if (currentBody.join("\n").trim()) {
+        sections.push({
+            title: currentTitle,
+            content: currentBody.join("\n").trim(),
+        })
+    }
+
+    return sections
+}
+
+function extractKeywords(query: string): string[] {
+    const normalized = query.toLowerCase()
+    const tokens = normalized
+        .split(/[^a-z0-9\u4e00-\u9fff]+/g)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2)
+
+    return Array.from(new Set(tokens)).slice(0, 24)
+}
+
+function rankSectionsByQuery(sections: ReportSection[], query: string): ReportSection[] {
+    const keywords = extractKeywords(query)
+    if (keywords.length === 0) {
+        return sections
+    }
+
+    const scored = sections.map((section) => {
+        const titleLower = section.title.toLowerCase()
+        const contentLower = section.content.toLowerCase()
+        let score = 0
+        for (const keyword of keywords) {
+            if (titleLower.includes(keyword)) score += 5
+            if (contentLower.includes(keyword)) score += 1
+        }
+        return { section, score }
+    })
+
+    scored.sort((a, b) => b.score - a.score)
+
+    const hasPositiveScore = scored.some((item) => item.score > 0)
+    if (!hasPositiveScore) {
+        return sections
+    }
+
+    return scored.map((item) => item.section)
+}
+
+function selectRelevantContext(reportContent: string, messages: ChatInputMessage[]): RetrievedContext {
+    const sections = parseReportSections(reportContent)
+    if (sections.length === 0) {
+        return { totalSections: 0, selectedSections: [] }
+    }
+
+    const latestUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
+    const rankedSections = rankSectionsByQuery(sections, latestUserMessage)
+
+    const maxSections = 6
+    const maxChars = 12_000
+
+    const selectedSections: ReportSection[] = []
+    let usedChars = 0
+
+    for (const section of rankedSections) {
+        if (selectedSections.length >= maxSections) break
+
+        const nextChars = section.title.length + section.content.length
+        if (selectedSections.length > 0 && usedChars + nextChars > maxChars) {
+            continue
+        }
+
+        selectedSections.push(section)
+        usedChars += nextChars
+    }
+
+    if (selectedSections.length === 0) {
+        selectedSections.push(...sections.slice(0, Math.min(3, sections.length)))
+    }
+
+    return {
+        totalSections: sections.length,
+        selectedSections,
+    }
+}
+
 // 构建 system prompt
-function buildSystemPrompt(reportContent: string): string {
+function buildSystemPrompt(context: RetrievedContext): string {
+    const selectedContent = context.selectedSections
+        .map((section) => `## ${section.title}\n\n${section.content}`)
+        .join("\n\n---\n\n")
+
     return `你是一个专业的亚马逊产品分析助手。你的职责是**严格基于以下分析报告**回答用户的问题。
 
 ## 核心规则（必须遵守）
@@ -50,119 +215,134 @@ function buildSystemPrompt(reportContent: string): string {
 - 在适当时给出 **可操作的建议**，而非仅描述现状
 - 如果用户问到关于产品图片的问题，基于报告中的产品特点和用户痛点给出详细的拍摄/设计建议
 
-## 分析报告内容
+## 分析报告内容（检索片段）
+共 ${context.totalSections} 个章节，当前提供 ${context.selectedSections.length} 个相关章节片段。
+如果用户问题超出这些片段范围，你必须明确说明“当前检索片段未覆盖该信息”。
 
-${reportContent}
+${selectedContent}
 
 ---
-以上就是完整的分析报告内容。请严格基于这些信息回答用户的问题，不要引用任何外部数据。`
+以上是当前可用的报告检索片段。请严格基于这些信息回答用户的问题，不要引用任何外部数据。`
 }
 
 export async function POST(request: NextRequest) {
-    try {
-        const body = await request.json()
-        const { messages, reportId, model: requestModel } = body as {
-            messages: { role: "user" | "assistant"; content: string }[]
-            reportId: string
-            model?: string
-        }
+    return withApiAudit(request, "chat:complete", async ({ requestId }) => {
+        const guardError = enforceApiGuard(request, { route: "chat:complete", maxRequests: 40, windowMs: 60_000, requestId })
+        if (guardError) return guardError
 
-        if (!messages || !reportId) {
-            return new Response(JSON.stringify({ error: "Missing messages or reportId" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
+        try {
+            const body = (await request.json()) as Record<string, unknown>
+            const reportId = typeof body.reportId === "string" ? body.reportId.trim() : ""
+            const messages = normalizeInputMessages(body.messages)
+            const requestModel = normalizeModel(body.model)
+
+            if (!messages || !reportId) {
+                return apiError("Missing messages or reportId", { status: 400, code: "MISSING_REQUIRED_FIELDS", requestId })
+            }
+
+            if (!isValidReportId(reportId)) {
+                return apiError("Invalid reportId", { status: 400, code: "INVALID_REPORT_ID", requestId })
+            }
+
+            const reportContent = loadReportContent(reportId)
+            if (!reportContent) {
+                return apiError("Report not found", { status: 404, code: "REPORT_NOT_FOUND", requestId })
+            }
+
+            const apiKey = process.env.OPENROUTER_API_KEY
+            const baseUrl = process.env.LLM_BASE_URL || "https://openrouter.ai/api/v1"
+            const model = requestModel || process.env.LLM_MODEL || "google/gemini-2.0-flash-001"
+
+            if (!apiKey) {
+                return apiError("API key not configured", { status: 500, code: "LLM_API_KEY_MISSING", requestId })
+            }
+
+            const retrievedContext = selectRelevantContext(reportContent, messages)
+            const fullMessages = [
+                { role: "system", content: buildSystemPrompt(retrievedContext) },
+                ...messages,
+            ]
+
+            const llmResponse = await fetch(`${baseUrl}/chat/completions`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`,
+                    "HTTP-Referer": "https://amzaiagent.com",
+                    "X-Title": "AmaQ Ops - AI Report System",
+                },
+                body: JSON.stringify({
+                    model,
+                    messages: fullMessages,
+                    stream: true,
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                }),
             })
-        }
 
-        // 加载报告内容
-        const reportContent = loadReportContent(reportId)
-        if (!reportContent) {
-            return new Response(JSON.stringify({ error: "Report not found" }), {
-                status: 404,
-                headers: { "Content-Type": "application/json" },
-            })
-        }
+            if (!llmResponse.ok) {
+                const errorText = await llmResponse.text()
+                console.error("LLM API error:", llmResponse.status, errorText)
+                return apiError(`LLM API error: ${llmResponse.status}`, {
+                    status: 502,
+                    code: "LLM_UPSTREAM_ERROR",
+                    requestId,
+                    details: errorText,
+                })
+            }
 
-        const apiKey = process.env.OPENROUTER_API_KEY
-        const baseUrl = process.env.LLM_BASE_URL || "https://openrouter.ai/api/v1"
-        // 优先使用前端传来的模型，其次 env 变量，最后默认值
-        const model = requestModel || process.env.LLM_MODEL || "google/gemini-2.0-flash-001"
+            const encoder = new TextEncoder()
+            const decoder = new TextDecoder()
+            const reader = llmResponse.body?.getReader()
 
-        if (!apiKey) {
-            return new Response(JSON.stringify({ error: "API key not configured" }), {
-                status: 500,
-                headers: { "Content-Type": "application/json" },
-            })
-        }
+            const readable = new ReadableStream({
+                async start(controller) {
+                    if (!reader) {
+                        controller.close()
+                        return
+                    }
 
-        // 构建完整消息列表
-        const fullMessages = [
-            { role: "system", content: buildSystemPrompt(reportContent) },
-            ...messages,
-        ]
+                    let buffer = ""
 
-        // 调用 OpenRouter API (OpenAI 兼容格式)
-        const llmResponse = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-                "HTTP-Referer": "https://amzaiagent.com",
-                "X-Title": "AmaQ Ops - AI Report System",
-            },
-            body: JSON.stringify({
-                model,
-                messages: fullMessages,
-                stream: true,
-                temperature: 0.7,
-                max_tokens: 4096,
-            }),
-        })
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read()
+                            if (done) break
 
-        if (!llmResponse.ok) {
-            const errorText = await llmResponse.text()
-            console.error("LLM API error:", llmResponse.status, errorText)
-            return new Response(
-                JSON.stringify({ error: `LLM API error: ${llmResponse.status}`, details: errorText }),
-                { status: 502, headers: { "Content-Type": "application/json" } }
-            )
-        }
+                            buffer += decoder.decode(value, { stream: true })
 
-        // 转发 SSE 流
-        const encoder = new TextEncoder()
-        const decoder = new TextDecoder()
-        const reader = llmResponse.body?.getReader()
+                            const lines = buffer.split("\n")
+                            buffer = lines.pop() || ""
 
-        const readable = new ReadableStream({
-            async start(controller) {
-                if (!reader) {
-                    controller.close()
-                    return
-                }
-
-                let buffer = ""
-
-                try {
-                    while (true) {
-                        const { done, value } = await reader.read()
-                        if (done) break
-
-                        buffer += decoder.decode(value, { stream: true })
-
-                        // 按行分割处理 SSE
-                        const lines = buffer.split("\n")
-                        buffer = lines.pop() || "" // 保留不完整的最后一行
-
-                        for (const line of lines) {
-                            const trimmed = line.trim()
-                            if (!trimmed || trimmed === "data: [DONE]") {
-                                if (trimmed === "data: [DONE]") {
-                                    controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+                            for (const line of lines) {
+                                const trimmed = line.trim()
+                                if (!trimmed || trimmed === "data: [DONE]") {
+                                    if (trimmed === "data: [DONE]") {
+                                        controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+                                    }
+                                    continue
                                 }
-                                continue
-                            }
 
-                            if (trimmed.startsWith("data: ")) {
+                                if (trimmed.startsWith("data: ")) {
+                                    const jsonStr = trimmed.slice(6)
+                                    try {
+                                        const parsed = JSON.parse(jsonStr)
+                                        const content = parsed.choices?.[0]?.delta?.content
+                                        if (content) {
+                                            controller.enqueue(
+                                                encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
+                                            )
+                                        }
+                                    } catch {
+                                        // ignore parse error from upstream chunk
+                                    }
+                                }
+                            }
+                        }
+
+                        if (buffer.trim()) {
+                            const trimmed = buffer.trim()
+                            if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
                                 const jsonStr = trimmed.slice(6)
                                 try {
                                     const parsed = JSON.parse(jsonStr)
@@ -173,61 +353,38 @@ export async function POST(request: NextRequest) {
                                         )
                                     }
                                 } catch {
-                                    // 忽略 JSON 解析错误
+                                    // ignore parse error from trailing chunk
                                 }
                             }
                         }
+
+                        controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+                        controller.close()
+                    } catch (error) {
+                        console.error("Stream processing error:", error)
+                        controller.enqueue(
+                            encoder.encode(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`)
+                        )
+                        controller.close()
                     }
+                },
+            })
 
-                    // 处理 buffer 中剩余的数据
-                    if (buffer.trim()) {
-                        const trimmed = buffer.trim()
-                        if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
-                            const jsonStr = trimmed.slice(6)
-                            try {
-                                const parsed = JSON.parse(jsonStr)
-                                const content = parsed.choices?.[0]?.delta?.content
-                                if (content) {
-                                    controller.enqueue(
-                                        encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
-                                    )
-                                }
-                            } catch {
-                                // ignore
-                            }
-                        }
-                    }
-
-                    controller.enqueue(encoder.encode("data: [DONE]\n\n"))
-                    controller.close()
-                } catch (error) {
-                    console.error("Stream processing error:", error)
-                    controller.enqueue(
-                        encoder.encode(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`)
-                    )
-                    controller.close()
-                }
-            },
-        })
-
-        return new Response(readable, {
-            headers: {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                Connection: "keep-alive",
-            },
-        })
-    } catch (error) {
-        console.error("Chat API error:", error)
-        return new Response(
-            JSON.stringify({
-                error: "Internal server error",
-                details: error instanceof Error ? error.message : "Unknown error",
-            }),
-            {
+            return new Response(readable, {
+                headers: {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    Connection: "keep-alive",
+                },
+            })
+        } catch (error) {
+            console.error("Chat API error:", error)
+            return apiError("Internal server error", {
                 status: 500,
-                headers: { "Content-Type": "application/json" },
-            }
-        )
-    }
+                code: "CHAT_INTERNAL_ERROR",
+                requestId,
+                details: error instanceof Error ? error.message : "Unknown error",
+            })
+        }
+    })
 }

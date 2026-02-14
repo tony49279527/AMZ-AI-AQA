@@ -2,15 +2,40 @@
 
 import { useState, useEffect } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import Link from "next/link"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import rehypeRaw from "rehype-raw"
 import { cn } from "@/lib/utils"
 import { Navigation } from "@/components/navigation"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { buildClientApiHeaders } from "@/lib/client-api"
+import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
+import type { ReportDataFile, ReportMetadata } from "@/lib/report-metadata"
+
+type ReportConfig = Pick<
+  ReportMetadata,
+  "coreAsins" | "competitorAsins" | "marketplace" | "language" | "model" | "websiteCount" | "youtubeCount" | "title" | "createdAt"
+>
+
+function getQaIntroSeenKey(reportId: string): string {
+  return `qa_intro_seen_${reportId}`
+}
+
+function getChatHistoryKey(reportId: string): string {
+  return `chat_history_${reportId}`
+}
+
+function hasChatHistory(reportId: string): boolean {
+  const raw = localStorage.getItem(getChatHistoryKey(reportId))
+  if (!raw) return false
+
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.length > 0 : true
+  } catch {
+    return true
+  }
+}
 
 export default function ReportDetailPage() {
   const params = useParams()
@@ -23,11 +48,8 @@ export default function ReportDetailPage() {
   const [activeTab, setActiveTab] = useState(initialTab)
 
   const [activeSection, setActiveSection] = useState("")
-  const [isScrolled, setIsScrolled] = useState(false)
   const [markdown, setMarkdown] = useState("")
   const [loading, setLoading] = useState(true)
-
-  const [showContext, setShowContext] = useState(true)
 
   // 动态从 Markdown 提取目录章节 (提取 ## 和 ### 级别的标题)
   const [sections, setSections] = useState<{ id: string; title: string; level: number }[]>([])
@@ -41,9 +63,26 @@ export default function ReportDetailPage() {
   }, [searchParams])
 
   useEffect(() => {
+    if (activeTab !== "qa") return
+
+    const introSeenKey = getQaIntroSeenKey(reportId)
+    const introSeen = localStorage.getItem(introSeenKey) === "1"
+    const chattedBefore = hasChatHistory(reportId)
+
+    if (introSeen || chattedBefore) {
+      router.replace(`/chat/${reportId}`)
+      return
+    }
+
+    localStorage.setItem(introSeenKey, "1")
+  }, [activeTab, reportId, router])
+
+  useEffect(() => {
     async function fetchReport() {
       try {
-        const response = await fetch(`/api/report/${reportId}`)
+        const response = await fetch(`/api/report/${reportId}`, {
+          headers: buildClientApiHeaders(),
+        })
         if (response.ok) {
           const text = await response.text()
           setMarkdown(text)
@@ -77,8 +116,6 @@ export default function ReportDetailPage() {
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10)
-
       const sectionElements = sections.map((s) => document.getElementById(s.id))
       const scrollPosition = window.scrollY + 200
 
@@ -105,49 +142,209 @@ export default function ReportDetailPage() {
 
 
 
-  // 报告创建时的配置信息
-  const reportConfig = {
-    coreAsins: ["B0FMK94VY4", "B0FMK95ABC"],
-    competitorAsins: ["B09XYZ1234", "B09ABC5678", "B09DEF9012", "B09GHI3456", "B09JKL7890"],
-    marketplace: "US",
-    language: "中文",
-    llmModel: "Claude 3.5 Sonnet",
-    websiteCount: 10,
-    youtubeCount: 10,
-    title: "AI竞品分析报告-猫砂盆-C4.5",
-    createdAt: "2024-09-15",
-  }
-
-  const [dataFiles, setDataFiles] = useState([
-    { id: "1", category: "亚马逊数据", name: "Amazon Product Page (B0FMK94VY4)", size: "1.2MB", icon: "fa-shopping-cart text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
-    { id: "2", category: "亚马逊数据", name: "Amazon Product Page (B0FMK95ABC)", size: "0.9MB", icon: "fa-shopping-cart text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
-    { id: "3", category: "竞品数据", name: "Competitor Analysis - B09XYZ1234", size: "0.8MB", icon: "fa-chart-line text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
-    { id: "4", category: "竞品数据", name: "Competitor Analysis - B09ABC5678", size: "0.7MB", icon: "fa-chart-line text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
-    { id: "5", category: "网站参考", name: "Google Search Results (10 pages)", size: "3.2MB", icon: "fa-globe text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
-    { id: "6", category: "YouTube", name: "YouTube Reviews (10 videos)", size: "2.1MB", icon: "fa-youtube text-slate-400", addedAt: "2024-09-15", source: "系统采集" },
-    { id: "7", category: "上传文件", name: "Return Reason Statistics Q3.csv", size: "128KB", icon: "fa-file-csv text-slate-400", addedAt: "2024-09-15", source: "用户上传" },
-    { id: "8", category: "上传文件", name: "店铺受众画像-2024.pdf", size: "2.4MB", icon: "fa-file-pdf text-slate-400", addedAt: "2024-09-15", source: "用户上传" },
-  ])
+  const [reportConfig, setReportConfig] = useState<ReportConfig | null>(null)
+  const [dataFiles, setDataFiles] = useState<ReportDataFile[]>([])
 
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [isSyncingDataFiles, setIsSyncingDataFiles] = useState(false)
+  const [dataFileSyncError, setDataFileSyncError] = useState("")
+  const [activeFileActionId, setActiveFileActionId] = useState<string | null>(null)
 
-  const handleNewFileUpload = (files: FileList | null) => {
+  useEffect(() => {
+    async function fetchReportMetadata() {
+      try {
+        const response = await fetch(`/api/report-meta/${reportId}`, {
+          headers: buildClientApiHeaders(),
+        })
+
+        if (!response.ok) return
+        const metadata = (await response.json()) as ReportMetadata
+
+        setReportConfig({
+          coreAsins: metadata.coreAsins,
+          competitorAsins: metadata.competitorAsins,
+          marketplace: metadata.marketplace,
+          language: metadata.language,
+          model: metadata.model,
+          websiteCount: metadata.websiteCount,
+          youtubeCount: metadata.youtubeCount,
+          title: metadata.title,
+          createdAt: metadata.createdAt,
+        })
+        setDataFiles(metadata.dataFiles || [])
+      } catch (error) {
+        console.error("Failed to load report metadata:", error)
+      }
+    }
+
+    fetchReportMetadata()
+  }, [reportId])
+
+  const persistDataFiles = async (nextFiles: ReportDataFile[]): Promise<boolean> => {
+    setIsSyncingDataFiles(true)
+    setDataFileSyncError("")
+
+    try {
+      const response = await fetch(`/api/report-meta/${reportId}`, {
+        method: "PATCH",
+        headers: buildClientApiHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ dataFiles: nextFiles }),
+      })
+
+      if (!response.ok) {
+        throw await buildClientApiError(response, `HTTP ${response.status}`)
+      }
+
+      const updated = (await response.json()) as ReportMetadata
+      setDataFiles(updated.dataFiles || [])
+      return true
+    } catch (error) {
+      console.error("Failed to sync data files:", error)
+      setDataFileSyncError(formatClientErrorMessage(error, "数据文件同步失败，请稍后重试"))
+      return false
+    } finally {
+      setIsSyncingDataFiles(false)
+    }
+  }
+
+  const uploadFilesToServer = async (files: FileList): Promise<ReportDataFile[]> => {
+    const formData = new FormData()
+    Array.from(files).forEach((file) => {
+      formData.append("files", file)
+    })
+
+    const response = await fetch(`/api/report-files/${reportId}`, {
+      method: "POST",
+      headers: buildClientApiHeaders(),
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw await buildClientApiError(response, `HTTP ${response.status}`)
+    }
+
+    const payload = (await response.json()) as { files?: ReportDataFile[] }
+    return payload.files || []
+  }
+
+  const deleteFileFromServer = async (storagePath: string): Promise<void> => {
+    const response = await fetch(`/api/report-files/${reportId}`, {
+      method: "DELETE",
+      headers: buildClientApiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ storagePath }),
+    })
+
+    if (!response.ok) {
+      throw await buildClientApiError(response, `HTTP ${response.status}`)
+    }
+  }
+
+  const canPreviewFile = (file: ReportDataFile): boolean => {
+    const mime = (file.mimeType || "").toLowerCase()
+    return mime.startsWith("image/") || mime === "application/pdf" || mime.startsWith("text/")
+  }
+
+  const fetchStoredFileBlob = async (storagePath: string): Promise<Blob> => {
+    const response = await fetch(`/api/report-files/${reportId}/${encodeURIComponent(storagePath)}`, {
+      headers: buildClientApiHeaders(),
+    })
+
+    if (!response.ok) {
+      throw await buildClientApiError(response, `HTTP ${response.status}`)
+    }
+
+    return response.blob()
+  }
+
+  const handleDownloadFile = async (file: ReportDataFile) => {
+    if (!file.storagePath || isSyncingDataFiles) return
+    setDataFileSyncError("")
+    setActiveFileActionId(file.id)
+
+    try {
+      const blob = await fetchStoredFileBlob(file.storagePath)
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = file.name || "download"
+      anchor.click()
+      URL.revokeObjectURL(objectUrl)
+    } catch (error) {
+      console.error("Failed to download file:", error)
+      setDataFileSyncError(formatClientErrorMessage(error, "文件下载失败，请稍后重试"))
+    } finally {
+      setActiveFileActionId(null)
+    }
+  }
+
+  const handlePreviewFile = async (file: ReportDataFile) => {
+    if (!file.storagePath || isSyncingDataFiles) return
+    if (!canPreviewFile(file)) return
+    setDataFileSyncError("")
+    setActiveFileActionId(file.id)
+
+    try {
+      const blob = await fetchStoredFileBlob(file.storagePath)
+      const objectUrl = URL.createObjectURL(blob)
+      window.open(objectUrl, "_blank", "noopener,noreferrer")
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+    } catch (error) {
+      console.error("Failed to preview file:", error)
+      setDataFileSyncError(formatClientErrorMessage(error, "文件预览失败，请稍后重试"))
+    } finally {
+      setActiveFileActionId(null)
+    }
+  }
+
+  const handleNewFileUpload = async (files: FileList | null) => {
+    if (isSyncingDataFiles) return
     if (!files) return
-    const newFiles = Array.from(files).map((file, i) => ({
-      id: `new-${Date.now()}-${i}`,
-      category: "上传文件" as const,
-      name: file.name,
-      size: file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)}MB` : `${(file.size / 1024).toFixed(0)}KB`,
-      icon: file.name.endsWith(".csv") ? "fa-file-csv text-slate-400"
-        : file.name.endsWith(".xlsx") || file.name.endsWith(".xls") ? "fa-file-excel text-slate-400"
-          : file.name.endsWith(".pdf") ? "fa-file-pdf text-slate-400"
-            : "fa-file text-slate-400",
-      addedAt: new Date().toISOString().split("T")[0],
-      source: "用户上传",
-    }))
-    setDataFiles(prev => [...prev, ...newFiles])
-    setShowUploadModal(false)
+
+    setIsSyncingDataFiles(true)
+    setDataFileSyncError("")
+
+    try {
+      const uploadedFiles = await uploadFilesToServer(files)
+      const ok = await persistDataFiles([...dataFiles, ...uploadedFiles])
+      if (ok) {
+        setShowUploadModal(false)
+      } else {
+        await Promise.allSettled(
+          uploadedFiles
+            .map((file) => file.storagePath)
+            .filter((storagePath): storagePath is string => Boolean(storagePath))
+            .map((storagePath) => deleteFileFromServer(storagePath))
+        )
+      }
+    } catch (error) {
+      console.error("Failed to upload files:", error)
+      setDataFileSyncError(formatClientErrorMessage(error, "文件上传失败，请稍后重试"))
+      setIsSyncingDataFiles(false)
+    }
+  }
+
+  const handleDeleteFile = async (fileId: string) => {
+    if (isSyncingDataFiles) return
+    const targetFile = dataFiles.find((f) => f.id === fileId)
+    if (!targetFile) return
+
+    setDataFileSyncError("")
+    setIsSyncingDataFiles(true)
+
+    try {
+      if (targetFile.storagePath) {
+        await deleteFileFromServer(targetFile.storagePath)
+      }
+    } catch (error) {
+      console.error("Failed to delete server file:", error)
+      setDataFileSyncError(formatClientErrorMessage(error, "文件删除失败，请稍后重试"))
+      setIsSyncingDataFiles(false)
+      return
+    }
+
+    const nextFiles = dataFiles.filter((f) => f.id !== fileId)
+    await persistDataFiles(nextFiles)
   }
 
 
@@ -248,7 +445,6 @@ export default function ReportDetailPage() {
                     <div id="markdown-content">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
                         components={{
                           h1: ({ ...props }) => (
                             <h1
@@ -305,7 +501,12 @@ export default function ReportDetailPage() {
                             <td className="px-6 py-4 text-sm text-slate-600 border-b border-slate-100" {...props} />
                           ),
                           img: ({ ...props }) => (
-                            <img className="rounded-2xl my-10 border border-slate-100 shadow-sm mx-auto" {...props} />
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              className="rounded-2xl my-10 border border-slate-100 shadow-sm mx-auto"
+                              alt={props.alt ?? ""}
+                              {...props}
+                            />
                           ),
                           hr: ({ ...props }) => <hr className="my-16 border-slate-100" {...props} />,
                           strong: ({ ...props }) => <strong className="font-bold text-slate-900" {...props} />,
@@ -346,7 +547,10 @@ export default function ReportDetailPage() {
                 基于当前报告内容，为您提供深入的即时问答服务。支持多轮对话、引用来源追踪。
               </p>
               <Button
-                onClick={() => router.push(`/chat/${reportId}`)}
+                onClick={() => {
+                  localStorage.setItem(getQaIntroSeenKey(reportId), "1")
+                  router.push(`/chat/${reportId}`)
+                }}
                 size="lg"
                 className="w-full text-lg h-12 gap-2 shadow-lg hover:shadow-xl transition-all"
               >
@@ -367,41 +571,41 @@ export default function ReportDetailPage() {
                   <div className="w-1.5 h-8 bg-blue-600 rounded-full"></div>
                   <h2 className="text-2xl font-bold text-slate-900 tracking-tight">报告配置</h2>
                 </div>
-                <span className="text-sm text-slate-400">创建于 {reportConfig.createdAt}</span>
+                <span className="text-sm text-slate-400">创建于 {reportConfig?.createdAt ?? "--"}</span>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="text-xs text-slate-400 font-medium mb-1.5">市场站点</div>
-                  <div className="font-bold text-slate-900 text-lg">🇺🇸 {reportConfig.marketplace}</div>
+                  <div className="font-bold text-slate-900 text-lg">🇺🇸 {reportConfig?.marketplace ?? "--"}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="text-xs text-slate-400 font-medium mb-1.5">报告语言</div>
-                  <div className="font-bold text-slate-900 text-lg">{reportConfig.language}</div>
+                  <div className="font-bold text-slate-900 text-lg">{reportConfig?.language ?? "--"}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="text-xs text-slate-400 font-medium mb-1.5">LLM 模型</div>
-                  <div className="font-bold text-slate-900 text-sm">{reportConfig.llmModel}</div>
+                  <div className="font-bold text-slate-900 text-sm">{reportConfig?.model ?? "--"}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="text-xs text-slate-400 font-medium mb-1.5">参考数据</div>
-                  <div className="font-bold text-slate-900 text-sm">{reportConfig.websiteCount} 网站 · {reportConfig.youtubeCount} 视频</div>
+                  <div className="font-bold text-slate-900 text-sm">{reportConfig?.websiteCount ?? 0} 网站 · {reportConfig?.youtubeCount ?? 0} 视频</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100">
-                  <div className="text-xs text-slate-500 font-semibold mb-2">核心产品 ASIN ({reportConfig.coreAsins.length})</div>
+                  <div className="text-xs text-slate-500 font-semibold mb-2">核心产品 ASIN ({reportConfig?.coreAsins.length ?? 0})</div>
                   <div className="flex flex-wrap gap-2">
-                    {reportConfig.coreAsins.map((asin) => (
+                    {(reportConfig?.coreAsins ?? []).map((asin) => (
                       <span key={asin} className="px-3 py-1.5 bg-white rounded-lg text-sm font-mono text-slate-700 border border-slate-200 shadow-sm">{asin}</span>
                     ))}
                   </div>
                 </div>
                 <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100">
-                  <div className="text-xs text-slate-500 font-semibold mb-2">竞品 ASIN ({reportConfig.competitorAsins.length})</div>
+                  <div className="text-xs text-slate-500 font-semibold mb-2">竞品 ASIN ({reportConfig?.competitorAsins.length ?? 0})</div>
                   <div className="flex flex-wrap gap-2">
-                    {reportConfig.competitorAsins.map((asin) => (
+                    {(reportConfig?.competitorAsins ?? []).map((asin) => (
                       <span key={asin} className="px-3 py-1.5 bg-white rounded-lg text-sm font-mono text-slate-700 border border-slate-200 shadow-sm">{asin}</span>
                     ))}
                   </div>
@@ -419,12 +623,17 @@ export default function ReportDetailPage() {
                 </div>
                 <button
                   onClick={() => setShowUploadModal(true)}
+                  disabled={isSyncingDataFiles}
                   className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   <i className="fas fa-plus text-xs"></i>
-                  新增文件
+                  {isSyncingDataFiles ? "同步中..." : "新增文件"}
                 </button>
               </div>
+
+              {dataFileSyncError && (
+                <div className="mb-4 text-sm text-red-500">{dataFileSyncError}</div>
+              )}
 
               {/* File Table */}
               <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -468,15 +677,38 @@ export default function ReportDetailPage() {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-right">
-                          {file.source === "用户上传" && (
-                            <button
-                              onClick={() => setDataFiles(prev => prev.filter(f => f.id !== file.id))}
-                              className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
-                              title="删除文件"
-                            >
-                              <i className="fas fa-trash-can text-xs text-red-400"></i>
-                            </button>
-                          )}
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {file.storagePath && (
+                              <button
+                                onClick={() => void handleDownloadFile(file)}
+                                disabled={isSyncingDataFiles || activeFileActionId === file.id}
+                                className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
+                                title="下载文件"
+                              >
+                                <i className="fas fa-download text-xs text-slate-500"></i>
+                              </button>
+                            )}
+                            {file.storagePath && canPreviewFile(file) && (
+                              <button
+                                onClick={() => void handlePreviewFile(file)}
+                                disabled={isSyncingDataFiles || activeFileActionId === file.id}
+                                className="w-8 h-8 rounded-lg hover:bg-blue-50 flex items-center justify-center transition-colors"
+                                title="预览文件"
+                              >
+                                <i className="fas fa-eye text-xs text-blue-500"></i>
+                              </button>
+                            )}
+                            {file.source === "用户上传" && (
+                              <button
+                                onClick={() => void handleDeleteFile(file.id)}
+                                disabled={isSyncingDataFiles || activeFileActionId === file.id}
+                                className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors"
+                                title="删除文件"
+                              >
+                                <i className="fas fa-trash-can text-xs text-red-400"></i>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -504,7 +736,7 @@ export default function ReportDetailPage() {
                       )}
                       onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
                       onDragLeave={() => setDragOver(false)}
-                      onDrop={(e) => { e.preventDefault(); setDragOver(false); handleNewFileUpload(e.dataTransfer.files) }}
+                      onDrop={(e) => { e.preventDefault(); setDragOver(false); void handleNewFileUpload(e.dataTransfer.files) }}
                       onClick={() => document.getElementById("new-file-input")?.click()}
                     >
                       <input
@@ -513,7 +745,7 @@ export default function ReportDetailPage() {
                         className="hidden"
                         multiple
                         accept=".csv,.xlsx,.xls,.pdf,.doc,.docx,.txt,.json"
-                        onChange={(e) => handleNewFileUpload(e.target.files)}
+                        onChange={(e) => void handleNewFileUpload(e.target.files)}
                       />
                       <i className={cn("fas fa-cloud-arrow-up text-4xl mb-3", dragOver ? "text-blue-500" : "text-slate-300")}></i>
                       <p className="font-semibold text-slate-700 mb-1">拖放文件到这里，或点击选择</p>

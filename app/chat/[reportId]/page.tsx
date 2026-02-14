@@ -3,15 +3,14 @@
 import type React from "react"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { Navigation } from "@/components/navigation"
-import { Button } from "@/components/ui/button"
 import type { ChatMessage } from "@/lib/types"
 import { useParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import rehypeRaw from "rehype-raw"
 import { ChartView } from "@/components/chat/ChartView"
-import { ExportButton } from "@/components/chat/ExportButton"
+import { buildClientApiHeaders } from "@/lib/client-api"
+import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 
 // localStorage key for chat history
 const getChatStorageKey = (reportId: string) => `chat_history_${reportId}`
@@ -63,7 +62,9 @@ export default function ChatPage() {
   useEffect(() => {
     async function loadReportContext() {
       try {
-        const response = await fetch(`/api/report/${reportId}`)
+        const response = await fetch(`/api/report/${reportId}`, {
+          headers: buildClientApiHeaders(),
+        })
         if (response.ok) {
           const text = await response.text()
 
@@ -151,7 +152,6 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => [...prev, userMessage])
-    const currentInput = input
     setInput("")
     setIsStreaming(true)
 
@@ -193,49 +193,73 @@ export default function ChatPage() {
 
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildClientApiHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ messages: apiMessages, reportId, model: selectedModel }),
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+        throw await buildClientApiError(response, `HTTP ${response.status}`)
       }
 
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let fullContent = ""
+      let streamBuffer = ""
+      let streamDone = false
+
+      const processSseEventBlock = (block: string) => {
+        const lines = block.split(/\r?\n/)
+        for (const rawLine of lines) {
+          const line = rawLine.trim()
+          if (!line.startsWith("data: ")) continue
+
+          const data = line.slice(6).trim()
+          if (!data) continue
+          if (data === "[DONE]") {
+            streamDone = true
+            return
+          }
+
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.error) {
+              throw new Error(String(parsed.error))
+            }
+            if (parsed.content) {
+              fullContent += parsed.content
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMessageId
+                    ? { ...m, content: fullContent }
+                    : m
+                )
+              )
+            }
+          } catch {
+            // 忽略解析错误
+          }
+        }
+      }
 
       if (reader) {
-        while (true) {
+        while (!streamDone) {
           const { done, value } = await reader.read()
-          if (done) break
-
-          const text = decoder.decode(value, { stream: true })
-          const lines = text.split("\n")
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6)
-              if (data === "[DONE]") break
-
-              try {
-                const parsed = JSON.parse(data)
-                if (parsed.content) {
-                  fullContent += parsed.content
-                  // 更新消息内容 (流式效果)
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === aiMessageId
-                        ? { ...m, content: fullContent }
-                        : m
-                    )
-                  )
-                }
-              } catch {
-                // 忽略解析错误
-              }
+          if (done) {
+            if (streamBuffer.trim()) {
+              processSseEventBlock(streamBuffer)
             }
+            break
+          }
+
+          streamBuffer += decoder.decode(value, { stream: true })
+          streamBuffer = streamBuffer.replace(/\r\n/g, "\n")
+          let boundaryIndex = streamBuffer.indexOf("\n\n")
+          while (boundaryIndex !== -1) {
+            const block = streamBuffer.slice(0, boundaryIndex)
+            streamBuffer = streamBuffer.slice(boundaryIndex + 2)
+            processSseEventBlock(block)
+            if (streamDone) break
+            boundaryIndex = streamBuffer.indexOf("\n\n")
           }
         }
       }
@@ -256,26 +280,20 @@ export default function ChatPage() {
       )
     } catch (error) {
       console.error("Chat error:", error)
+      const message = formatClientErrorMessage(error, "未知错误")
       // 更新为错误消息
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMessageId
             ? {
               ...m,
-              content: `抱歉，回答时出现错误: ${error instanceof Error ? error.message : "未知错误"}。请检查 API 配置后重试。`,
+              content: `抱歉，回答时出现错误: ${message}。请检查 API 配置后重试。`,
             }
             : m
         )
       )
     } finally {
       setIsStreaming(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
     }
   }
 
@@ -479,14 +497,12 @@ export default function ChatPage() {
                         <div className="bg-white px-6 py-5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100/60 text-slate-800 text-[15px] leading-7 group hover:shadow-md transition-shadow">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeRaw]}
                             components={{
-                              code({ node, inline, className, children, ...props }: any) {
+                              code({ inline, className, children, ...props }: any) {
                                 if (className === "language-json:chart") {
                                   return <ChartView config={String(children).replace(/\n$/, "")} />
                                 }
 
-                                const match = /language-(\w+)/.exec(className || "")
                                 return !inline ? (
                                   <div className="relative group/code my-4">
                                     <pre {...props} className={cn(className, "p-4 rounded-xl bg-slate-900 text-slate-100 overflow-x-auto text-sm scrollbar-hide")}>
