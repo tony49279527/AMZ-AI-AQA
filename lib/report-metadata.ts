@@ -24,6 +24,8 @@ export type ReportMetadata = {
   createdAt: string
   updatedAt: string
   dataFiles: ReportDataFile[]
+  status?: "active" | "archived"  // 报告状态：active=活跃，archived=已存档
+  archivedAt?: string              // 存档时间
 }
 
 export function toLanguageLabel(languageCode: string): string {

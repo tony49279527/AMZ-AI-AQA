@@ -204,3 +204,47 @@ export async function PATCH(
     }
   })
 }
+
+// 存档/恢复报告
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<unknown> }
+) {
+  return withApiAudit(request, "report:archive", async ({ requestId }) => {
+    const guardError = enforceApiGuard(request, { route: "report:archive", maxRequests: 120, windowMs: 60_000, requestId })
+    if (guardError) return guardError
+
+    const reportId = await resolveReportId(context)
+    if (!isValidReportId(reportId)) {
+      return apiError("Invalid report ID", { status: 400, code: "INVALID_REPORT_ID", requestId })
+    }
+
+    const metaFilePath = getReportMetaFilePath(reportId)
+    const existing = readOrBootstrapMetadata(reportId)
+    if (!existing) {
+      return apiError("Report not found", { status: 404, code: "REPORT_NOT_FOUND", requestId })
+    }
+
+    try {
+      const body = await request.json()
+      const action = body?.action // "archive" 或 "restore"
+
+      if (!["archive", "restore"].includes(action)) {
+        return apiError("Invalid action. Use 'archive' or 'restore'", { status: 400, code: "INVALID_ACTION", requestId })
+      }
+
+      const updated: ReportMetadata = {
+        ...existing,
+        status: action === "archive" ? "archived" : "active",
+        archivedAt: action === "archive" ? new Date().toISOString() : undefined,
+        updatedAt: new Date().toISOString(),
+      }
+
+      writeFileAtomically(metaFilePath, JSON.stringify(updated, null, 2))
+      return NextResponse.json(updated)
+    } catch (error) {
+      console.error("Failed to update report status:", error)
+      return apiError("Failed to update report status", { status: 500, code: "REPORT_STATUS_UPDATE_FAILED", requestId })
+    }
+  })
+}

@@ -19,6 +19,7 @@ import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-
 type TabId = "all" | "mine" | "featured"
 type ViewMode = "grid" | "list"
 type SortOption = "recent" | "oldest" | "name-asc" | "name-desc"
+type ReportStatus = "active" | "archived"
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "recent", label: "最近更新" },
@@ -76,6 +77,7 @@ export default function DashboardPage() {
             ...r,
             createdAt: new Date(r.createdAt as string),
             updatedAt: new Date(r.updatedAt as string),
+            archivedStatus: (r.status || "active") as ReportStatus,
           }))
         )
       } catch (error) {
@@ -88,6 +90,31 @@ export default function DashboardPage() {
     loadReports()
   }, [])
 
+  // 存档报告
+  const archiveReport = async (reportId: string, action: "archive" | "restore") => {
+    try {
+      const response = await fetch(`/api/report-meta/${reportId}`, {
+        method: "DELETE",
+        headers: buildClientApiHeaders(),
+        body: JSON.stringify({ action }),
+      })
+
+      if (!response.ok) {
+        throw await buildClientApiError(response, `操作失败 (HTTP ${response.status})`)
+      }
+
+      // 刷新报告列表
+      setRecentReports(prev => prev.map(r =>
+        r.id === reportId
+          ? { ...r, archivedStatus: action === "archive" ? "archived" : "active" }
+          : r
+      ))
+    } catch (error) {
+      console.error("Failed to update report status:", error)
+      alert(formatClientErrorMessage(error, "操作失败，请稍后重试"))
+    }
+  }
+
   const tabs: { id: TabId; label: string }[] = [
     { id: "all", label: "全部" },
     { id: "mine", label: "我的报告" },
@@ -96,10 +123,10 @@ export default function DashboardPage() {
 
   const filteredReports =
     activeTab === "mine"
-      ? recentReports
+      ? recentReports.filter(r => r.archivedStatus !== "archived")
       : activeTab === "featured"
-        ? recentReports.slice(0, 4)
-        : recentReports
+        ? recentReports.filter(r => r.archivedStatus !== "archived").slice(0, 4)
+        : recentReports.filter(r => r.archivedStatus !== "archived")
 
   const sortedReports = [...filteredReports].sort((a, b) => {
     switch (sortBy) {
@@ -118,59 +145,85 @@ export default function DashboardPage() {
 
   // 渲染统一的报告卡片
   const renderReportCard = (report: Report, showBadge: boolean = false) => {
+    const isArchived = report.archivedStatus === "archived"
+
     return (
-      <Link key={report.id} href={`/report/${report.id}`} className="group">
-        <div className={cn(
-          "h-[220px] flex flex-col rounded-2xl border transition-all duration-300 p-5 group-hover:-translate-y-1",
-          reportTheme.bg,
-          reportTheme.border,
-          reportTheme.hoverBorder,
-          reportTheme.hoverShadow
-        )}>
-          <div className="flex items-center justify-between mb-4">
-            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
-              <i className={cn("fas fa-file-lines text-lg transition-colors", reportTheme.iconText)} />
-            </div>
-            {showBadge && (
-              <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-semibold border border-blue-100">
-                精选
-              </span>
-            )}
-            {!showBadge && report.status === "processing" && (
-              <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                {report.progress}%
-              </span>
-            )}
-          </div>
-
-          <h3 className="font-semibold text-base leading-snug text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors mb-auto">
-            {report.title}
-          </h3>
-
-          <div className="flex-shrink-0 pt-4 border-t border-slate-50 mt-4">
-            <div className="flex items-center gap-3 text-xs text-slate-400">
-              <div className="flex items-center gap-1.5">
-                <i className="far fa-clock" />
-                <span>{formatReportDate(report.updatedAt)}</span>
+      <div key={report.id} className="group relative">
+        <Link href={`/report/${report.id}`}>
+          <div className={cn(
+            "h-[220px] flex flex-col rounded-2xl border transition-all duration-300 p-5 group-hover:-translate-y-1",
+            isArchived ? "opacity-60 bg-slate-50" : reportTheme.bg,
+            reportTheme.border,
+            reportTheme.hoverBorder,
+            reportTheme.hoverShadow
+          )}>
+            <div className="flex items-center justify-between mb-4">
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
+                <i className={cn("fas fa-file-lines text-lg transition-colors", reportTheme.iconText)} />
               </div>
-              <div className="flex items-center gap-1.5">
-                <i className="fas fa-list-ul" />
-                <span>{getChapterCount(report)} 章节</span>
-              </div>
-
-              {report.status === "processing" && (
-                <div className="ml-auto w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                    style={{ width: `${report.progress}%` }}
-                  />
-                </div>
+              {isArchived && (
+                <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
+                  已存档
+                </span>
+              )}
+              {showBadge && !isArchived && (
+                <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-semibold border border-blue-100">
+                  精选
+                </span>
+              )}
+              {!showBadge && !isArchived && report.status === "processing" && (
+                <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                  {report.progress}%
+                </span>
               )}
             </div>
+
+            <h3 className="font-semibold text-base leading-snug text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors mb-auto">
+              {report.title}
+            </h3>
+
+            <div className="flex-shrink-0 pt-4 border-t border-slate-50 mt-4">
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <i className="far fa-clock" />
+                  <span>{formatReportDate(report.updatedAt)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <i className="fas fa-list-ul" />
+                  <span>{getChapterCount(report)} 章节</span>
+                </div>
+
+                {report.status === "processing" && (
+                  <div className="ml-auto w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                      style={{ width: `${report.progress}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
+        </Link>
+
+        {/* 悬停时显示的操作按钮 */}
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              archiveReport(report.id, isArchived ? "restore" : "archive")
+            }}
+            className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:border-red-300 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm"
+            title={isArchived ? "恢复报告" : "存档报告"}
+          >
+            <i className={cn(
+              "text-xs transition-colors",
+              isArchived ? "fas fa-undo text-slate-500" : "fas fa-archive text-slate-500 hover:text-red-600"
+            )} />
+          </button>
         </div>
-      </Link>
+      </div>
     )
   }
 

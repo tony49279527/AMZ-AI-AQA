@@ -8,6 +8,7 @@ export interface Report {
   chapters: Chapter[]
   mainProductFile?: string
   competitorFile?: string
+  archivedStatus?: "active" | "archived"  // 报告存档状态
 }
 
 export interface Chapter {

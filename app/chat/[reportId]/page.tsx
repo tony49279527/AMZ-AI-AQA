@@ -497,90 +497,137 @@ export default function ChatPage() {
       <div className="flex h-[calc(100vh-110px)] pt-[110px]">
         {/* ═══════ 左侧栏 - 聊天历史 ═══════ */}
         {showHistory ? (
-          <aside className="w-72 flex-shrink-0 border-r border-border/60 flex flex-col bg-muted/20">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-              <span className="text-sm font-semibold text-foreground">聊天历史</span>
-              <button
-                onClick={() => setShowHistory(false)}
-                className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
-              >
-                <i className="fas fa-chevron-left text-xs text-muted-foreground" />
-              </button>
-            </div>
+          <>
+            {/* 桌面端侧栏 */}
+            <aside className="hidden lg:flex w-72 flex-shrink-0 border-r border-border/60 flex-col bg-muted/20">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                <span className="text-sm font-semibold text-foreground">聊天历史</span>
+              </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              <button
-                onClick={createNewSession}
-                className="w-full text-left px-3 py-3 rounded-xl border border-dashed border-slate-300/80 bg-transparent text-slate-500 hover:bg-white/50 hover:border-primary/50 hover:text-primary transition-all mb-4 group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                    <i className="fas fa-plus text-xs" />
-                  </div>
-                  <span className="text-sm font-medium">新建对话</span>
-                </div>
-              </button>
-
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  onClick={() => setActiveSessionId(session.id)}
-                  className={cn(
-                    "px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1",
-                    activeSessionId === session.id
-                      ? "bg-white border-slate-200/60 shadow-sm"
-                      : "bg-transparent border-transparent hover:bg-white/40"
-                  )}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                <button
+                  onClick={createNewSession}
+                  className="w-full text-left px-3 py-3 rounded-xl border border-dashed border-slate-300/80 bg-transparent text-slate-500 hover:bg-white/50 hover:border-primary/50 hover:text-primary transition-all mb-4 group"
                 >
-                  <div className={cn(
-                    "font-medium text-sm truncate mb-1",
-                    activeSessionId === session.id ? "text-primary font-semibold" : "text-slate-700"
-                  )}>
-                    {session.title}
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                      <i className="fas fa-plus text-xs" />
+                    </div>
+                    <span className="text-sm font-medium">新建对话</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                    <i className="far fa-clock text-[9px] opacity-70" />
-                    {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                </button>
+
+                {sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    onClick={() => setActiveSessionId(session.id)}
+                    className={cn(
+                      "px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1",
+                      activeSessionId === session.id
+                        ? "bg-white border-slate-200/60 shadow-sm"
+                        : "bg-transparent border-transparent hover:bg-white/40"
+                    )}
+                  >
+                    <div className={cn(
+                      "font-medium text-sm truncate mb-1",
+                      activeSessionId === session.id ? "text-primary font-semibold" : "text-slate-700"
+                    )}>
+                      {session.title}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                      <i className="far fa-clock text-[9px] opacity-70" />
+                      {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </aside>
-        ) : (
-          <aside className="w-12 flex-shrink-0 border-r border-border/60 flex flex-col items-center pt-3 bg-muted/10">
-            <button
-              onClick={() => setShowHistory(true)}
-              className="w-8 h-8 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
-              title="展开聊天历史"
-            >
-              <i className="fas fa-chevron-right text-xs text-muted-foreground" />
-            </button>
-            <button
-              onClick={createNewSession}
-              className="mt-2 w-8 h-8 rounded-md hover:bg-primary/10 flex items-center justify-center transition-colors text-primary"
-              title="新建对话"
-            >
-              <i className="fas fa-plus text-xs" />
-            </button>
-          </aside>
-        )}
+                ))}
+              </div>
+            </aside>
+
+            {/* 移动端模态 */}
+            {showHistory && (
+              <div className="fixed inset-0 z-50 lg:hidden">
+                {/* 背景 */}
+                <div
+                  className="absolute inset-0 bg-black/50"
+                  onClick={() => setShowHistory(false)}
+                />
+
+                {/* 侧边栏 */}
+                <aside className="absolute left-0 top-0 bottom-0 w-64 bg-muted/20 border-r border-border/60 flex flex-col shadow-lg">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                    <span className="text-sm font-semibold text-foreground">聊天历史</span>
+                    <button
+                      onClick={() => setShowHistory(false)}
+                      className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+                    >
+                      <i className="fas fa-chevron-left text-xs text-muted-foreground" />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                    <button
+                      onClick={() => {
+                        createNewSession()
+                        setShowHistory(false)
+                      }}
+                      className="w-full text-left px-3 py-3 rounded-xl border border-dashed border-slate-300/80 bg-transparent text-slate-500 hover:bg-white/50 hover:border-primary/50 hover:text-primary transition-all mb-4 group"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                          <i className="fas fa-plus text-xs" />
+                        </div>
+                        <span className="text-sm font-medium">新建对话</span>
+                      </div>
+                    </button>
+
+                    {sessions.map((session) => (
+                      <div
+                        key={session.id}
+                        onClick={() => {
+                          setActiveSessionId(session.id)
+                          setShowHistory(false)
+                        }}
+                        className={cn(
+                          "px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1",
+                          activeSessionId === session.id
+                            ? "bg-white border-slate-200/60 shadow-sm"
+                            : "bg-transparent border-transparent hover:bg-white/40"
+                        )}
+                      >
+                        <div className={cn(
+                          "font-medium text-sm truncate mb-1",
+                          activeSessionId === session.id ? "text-primary font-semibold" : "text-slate-700"
+                        )}>
+                          {session.title}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                          <i className="far fa-clock text-[9px] opacity-70" />
+                          {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </aside>
+              </div>
+            )}
+          </>
+        ) : null}
 
         {/* ═══════ 中间 - 对话区 ═══════ */}
         <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
           {/* 对话标题栏 */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-white">
-            <div className="flex items-center gap-3">
-              {!showHistory && (
-                <button
-                  onClick={() => setShowHistory(true)}
-                  className="w-8 h-8 rounded-md hover:bg-slate-100 flex items-center justify-center transition-colors"
-                >
-                  <i className="fas fa-chevron-right text-sm text-slate-500" />
-                </button>
-              )}
-              <div>
-                <h2 className="text-base font-bold text-slate-800">{reportContext.title}</h2>
-                <p className="text-xs text-slate-500">智能问答 | AI Q&A</p>
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200 bg-white">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <button
+                onClick={() => setShowHistory(true)}
+                className="lg:hidden w-8 h-8 flex-shrink-0 rounded-md hover:bg-slate-100 flex items-center justify-center transition-colors"
+                title="聊天历史"
+              >
+                <i className="fas fa-bars text-sm text-slate-500" />
+              </button>
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-bold text-slate-800 truncate">{reportContext.title}</h2>
+                <p className="text-xs text-slate-500">智能问答</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -599,7 +646,7 @@ export default function ChatPage() {
 
           {/* 消息流 */}
           <div className="flex-1 overflow-y-auto scroll-smooth">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <div className="max-w-4xl mx-auto px-2 sm:px-6 py-3 sm:py-6 space-y-4 sm:space-y-6">
               {messages.map((message, idx) => (
                 <div key={message.id}>
                   {/* 系统消息 */}
@@ -616,8 +663,8 @@ export default function ChatPage() {
                   {message.role === "user" && (
                     <div className="flex justify-end">
                       <div className="max-w-[85%] sm:max-w-[75%]">
-                        <div className="bg-blue-600 text-white px-5 py-3.5 rounded-2xl rounded-tr-sm shadow-sm selection:bg-blue-700">
-                          <p className="text-[15px] leading-relaxed">{message.content}</p>
+                        <div className="bg-blue-600 text-white px-3 sm:px-5 py-2 sm:py-3.5 rounded-2xl rounded-tr-sm shadow-sm selection:bg-blue-700">
+                          <p className="text-sm sm:text-[15px] leading-relaxed">{message.content}</p>
                         </div>
                         <div className="text-[11px] text-slate-400 mt-1.5 text-right font-medium">
                           {message.timestamp.toLocaleTimeString("zh-CN", {
@@ -631,14 +678,14 @@ export default function ChatPage() {
 
                   {/* AI 回复 - 左对齐 */}
                   {message.role === "assistant" && (message.content || (!isStreaming && idx !== messages.length - 1)) && (
-                    <div className="flex items-start gap-4">
-                      <div className="w-9 h-9 rounded-xl bg-white border border-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                    <div className="flex items-start gap-2 sm:gap-4">
+                      <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white border border-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
                         <div className="bg-gradient-to-br from-indigo-500 to-violet-500 text-transparent bg-clip-text">
-                          <i className="fas fa-robot text-lg" />
+                          <i className="fas fa-robot text-base sm:text-lg" />
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="bg-white px-6 py-5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100/60 text-slate-800 text-[15px] leading-7 group hover:shadow-md transition-shadow">
+                        <div className="bg-white px-3 sm:px-6 py-3 sm:py-5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100/60 text-slate-800 text-sm sm:text-[15px] leading-6 sm:leading-7 group hover:shadow-md transition-shadow">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
@@ -742,11 +789,11 @@ export default function ChatPage() {
           </div>
 
           {/* ═══════ 底部输入区 (Solid Footer) ═══════ */}
-          <div className="bg-slate-50 p-4 sm:p-6 pb-4 relative z-10">
-            <div className="max-w-4xl mx-auto">
+          <div className="bg-slate-50 p-2 sm:p-4 pb-2 relative z-10 shrink-0">
+            <div className="max-w-4xl mx-auto px-2 sm:px-4">
               {/* 快捷问题 */}
               {messages.length <= 1 && (
-                <div className="flex flex-wrap gap-2 mb-4">
+                <div className="flex flex-col gap-2 mb-3 sm:mb-4">
                   {quickQuestions.map((question, idx) => (
                     <button
                       key={idx}
@@ -754,10 +801,10 @@ export default function ChatPage() {
                         setInput(question)
                         inputRef.current?.focus()
                       }}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:border-indigo-200 hover:text-indigo-600 hover:shadow-sm transition-all"
+                      className="inline-flex items-start gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:border-indigo-200 hover:text-indigo-600 hover:shadow-sm transition-all justify-start"
                     >
-                      <i className="fas fa-sparkles text-amber-400" />
-                      {question}
+                      <i className="fas fa-sparkles text-amber-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-left">{question}</span>
                     </button>
                   ))}
                 </div>
@@ -765,8 +812,8 @@ export default function ChatPage() {
 
               {/* 输入框容器 */}
               <div className="relative group">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-100/50 to-purple-100/50 rounded-2xl blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 -z-10" />
-                <div className="relative flex items-end gap-2 bg-white group-focus-within:bg-white rounded-2xl border border-slate-200 group-focus-within:border-indigo-300 group-focus-within:ring-4 group-focus-within:ring-indigo-100/50 transition-all px-4 py-3 shadow-sm">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-100/50 to-purple-100/50 rounded-xl sm:rounded-2xl blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 -z-10" />
+                <div className="relative flex items-end gap-1 sm:gap-2 bg-white group-focus-within:bg-white rounded-xl sm:rounded-2xl border border-slate-200 group-focus-within:border-indigo-300 group-focus-within:ring-4 group-focus-within:ring-indigo-100/50 transition-all px-2 sm:px-4 py-2 sm:py-3 shadow-sm">
                   <textarea
                     ref={inputRef as any}
                     value={input}
@@ -777,8 +824,8 @@ export default function ChatPage() {
                         handleSend();
                       }
                     }}
-                    placeholder="问点什么... (Shift + Enter 换行)"
-                    className="flex-1 bg-transparent text-[15px] text-slate-900 placeholder:text-slate-400 outline-none resize-none max-h-48 min-h-[44px] py-2"
+                    placeholder="问点什么..."
+                    className="flex-1 bg-transparent text-sm sm:text-[15px] text-slate-900 placeholder:text-slate-400 outline-none resize-none max-h-48 min-h-[36px] sm:min-h-[44px] py-1 sm:py-2"
                     disabled={isStreaming}
                     rows={1}
                     onInput={(e) => {
@@ -788,21 +835,21 @@ export default function ChatPage() {
                     }}
                   />
 
-                  <div className="flex items-center gap-1 pb-1.5">
-                    <button className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors" title="上传附件">
+                  <div className="flex items-center gap-0.5 sm:gap-1 pb-1 sm:pb-1.5 flex-shrink-0">
+                    <button className="w-7 sm:w-8 h-7 sm:h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors hidden sm:flex" title="上传附件">
                       <i className="fas fa-link text-sm" />
                     </button>
                     <button
                       onClick={handleSend}
                       disabled={!input.trim() || isStreaming}
                       className={cn(
-                        "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm ml-1",
+                        "w-7 sm:w-9 h-7 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center transition-all shadow-sm ml-0 sm:ml-1",
                         input.trim() && !isStreaming
                           ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-500/20 active:scale-95 transform"
                           : "bg-slate-100 text-slate-400 cursor-not-allowed"
                       )}
                     >
-                      <i className="fas fa-arrow-up text-sm font-bold" />
+                      <i className="fas fa-arrow-up text-xs sm:text-sm font-bold" />
                     </button>
                   </div>
                 </div>
