@@ -96,10 +96,10 @@ function parseAsinList(input: unknown): string[] | null {
 
     const unique = Array.from(new Set(
         input
-        .split(/[\n,，;\t ]+/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .map((item) => item.toUpperCase())
+            .split(/[\n,，;\t ]+/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .map((item) => item.toUpperCase())
     ))
 
     if (unique.length === 0 || unique.length > MAX_ASIN_COUNT) return null
@@ -226,7 +226,27 @@ export async function POST(request: NextRequest) {
                     const { reportId, filePath } = allocateReportId(reportsDir)
                     const metaFilePath = getReportMetaFilePath(reportId)
 
-                    send("init", { reportId, totalChapters: CHAPTERS.length })
+                    // 根据传入的 agents 配置过滤章节
+                    const activeAgents = (body.agents as Record<string, { enabled: boolean }>) || {}
+                    const filteredChapters = CHAPTERS.filter(chapter => {
+                        // 如果传入了配置，则检查对应 ID 是否启用。默认启用。
+                        if (activeAgents[chapter.id] !== undefined) {
+                            return activeAgents[chapter.id].enabled
+                        }
+                        return true
+                    })
+
+                    if (filteredChapters.length === 0) {
+                        send("error", { message: "未选择任何有效的分析章节" })
+                        controller.close()
+                        return
+                    }
+
+                    send("init", {
+                        reportId,
+                        totalChapters: filteredChapters.length,
+                        chapters: filteredChapters.map(c => ({ id: c.id, title: c.title }))
+                    })
                     send("log", { message: "初始化 LangGraph 工作流..." })
                     send("log", { message: `正在分析 ASIN: ${coreAsins}` })
                     send("log", { message: `竞品 ASIN: ${competitorAsins}` })
@@ -239,9 +259,9 @@ export async function POST(request: NextRequest) {
 
                     const startTime = Date.now()
 
-                    for (let i = 0; i < CHAPTERS.length; i++) {
-                        const chapter = CHAPTERS[i]
-                        const progress = Math.round(((i) / CHAPTERS.length) * 100)
+                    for (let i = 0; i < filteredChapters.length; i++) {
+                        const chapter = filteredChapters[i]
+                        const progress = Math.round(((i) / filteredChapters.length) * 100)
 
                         send("progress", {
                             chapter: i,
@@ -311,7 +331,7 @@ ${customPrompt ? `**用户额外要求:** ${customPrompt}` : ""}
                             fullReport += `## ${chapter.title}\n\n> ⚠️ 生成异常\n\n`
                         }
 
-                        const chapterProgress = Math.round(((i + 1) / CHAPTERS.length) * 100)
+                        const chapterProgress = Math.round(((i + 1) / filteredChapters.length) * 100)
                         send("progress", {
                             chapter: i,
                             chapterTitle: chapter.title,
@@ -343,7 +363,7 @@ ${customPrompt ? `**用户额外要求:** ${customPrompt}` : ""}
                     send("log", { message: `报告已保存: report_${reportId}.md` })
                     send("complete", {
                         reportId,
-                        chapters: CHAPTERS.length,
+                        chapters: filteredChapters.length,
                         elapsed,
                         fileSize: fullReport.length,
                     })

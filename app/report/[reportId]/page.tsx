@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Navigation } from "@/components/navigation"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Skeleton } from "@/components/ui/skeleton"
 import { buildClientApiHeaders } from "@/lib/client-api"
 import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 import type { ReportDataFile, ReportMetadata } from "@/lib/report-metadata"
@@ -242,7 +243,15 @@ export default function ReportDetailPage() {
 
   const canPreviewFile = (file: ReportDataFile): boolean => {
     const mime = (file.mimeType || "").toLowerCase()
-    return mime.startsWith("image/") || mime === "application/pdf" || mime.startsWith("text/")
+    const name = (file.name || "").toLowerCase()
+    return (
+      mime.startsWith("image/") ||
+      mime === "application/pdf" ||
+      mime.startsWith("text/") ||
+      mime === "application/json" ||
+      name.endsWith(".csv") ||
+      name.endsWith(".json")
+    )
   }
 
   const fetchStoredFileBlob = async (storagePath: string): Promise<Blob> => {
@@ -437,9 +446,24 @@ export default function ReportDetailPage() {
                   </div>
 
                   {loading ? (
-                    <div className="flex flex-col items-center justify-center py-20 space-y-4">
-                      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-slate-500 font-medium">正在加载报告内容...</p>
+                    <div className="space-y-12 py-4">
+                      <div className="space-y-4">
+                        <Skeleton className="h-12 w-[60%]" />
+                        <Skeleton className="h-4 w-[90%]" />
+                        <Skeleton className="h-4 w-[85%]" />
+                      </div>
+                      <div className="space-y-6">
+                        <Skeleton className="h-8 w-[40%]" />
+                        <div className="grid grid-cols-1 gap-4">
+                          <Skeleton className="h-32 w-full" />
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <Skeleton className="h-8 w-[35%]" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-[95%]" />
+                        <Skeleton className="h-4 w-[98%]" />
+                      </div>
                     </div>
                   ) : (
                     <div id="markdown-content">

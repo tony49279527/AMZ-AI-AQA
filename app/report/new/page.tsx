@@ -31,6 +31,7 @@ export default function NewReportPage() {
   const [logs, setLogs] = useState<{ time: string; message: string; error?: boolean }[]>([])
   const [chapterStatuses, setChapterStatuses] = useState<Record<number, string>>({})
   const [completionData, setCompletionData] = useState<{ chapters: number; elapsed: number } | null>(null)
+  const [dynamicChapters, setDynamicChapters] = useState<{ id: string; title: string }[]>([])
 
   // Form state
   const [coreAsins, setCoreAsins] = useState("")
@@ -92,6 +93,7 @@ export default function NewReportPage() {
           websiteCount,
           youtubeCount,
           customPrompt: currentPrompt,
+          agents: typeof window !== "undefined" ? JSON.parse(localStorage.getItem("app_settings") || "{}")?.agents : undefined
         }),
       })
 
@@ -131,6 +133,9 @@ export default function NewReportPage() {
           switch (eventType) {
             case "init":
               setReportId(data.reportId)
+              if (data.chapters) {
+                setDynamicChapters(data.chapters)
+              }
               addLog(`报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
               break
             case "progress":
@@ -243,7 +248,9 @@ export default function NewReportPage() {
 
   // ─── Generating state ───
   if (isGenerating) {
-    const chapters = ["市场与客群洞察", "竞品分析与我方策略", "退货报告分析", "Listing全面优化方案", "产品及周边优化建议", "关联场景词/产品拓展", "报告总结"]
+    const chapters = dynamicChapters.length > 0
+      ? dynamicChapters.map(c => c.title)
+      : ["市场与客群洞察", "竞品分析与我方策略", "退货报告分析", "Listing全面优化方案", "产品及周边优化建议", "关联场景词/产品拓展", "报告总结"]
     return (
       <div className="min-h-screen bg-background">
         <Navigation />

@@ -33,14 +33,31 @@ interface ChartData {
 const COLORS = ["#4f46e5", "#ec4899", "#8b5cf6", "#10b981", "#f59e0b", "#3b82f6"]
 
 export function ChartView({ config }: { config: string }) {
+    const [showRaw, setShowRaw] = React.useState(false)
     let chartConfig: ChartData
 
     try {
         chartConfig = JSON.parse(config)
     } catch {
         return (
-            <div className="p-4 border border-red-200 bg-red-50 text-red-600 rounded-lg text-sm">
-                图表数据解析错误
+            <div className="my-6 p-6 bg-red-50/50 border border-red-100 rounded-2xl text-red-600">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2 font-semibold">
+                        <i className="fas fa-triangle-exclamation"></i>
+                        图表数据解析错误
+                    </div>
+                    <button
+                        onClick={() => setShowRaw(!showRaw)}
+                        className="text-xs px-2 py-1 bg-red-100 hover:bg-red-200 rounded transition-colors"
+                    >
+                        {showRaw ? "隐藏核心数据" : "查看核心数据"}
+                    </button>
+                </div>
+                {showRaw && (
+                    <pre className="mt-4 p-4 bg-slate-900 text-slate-100 rounded-xl text-xs overflow-x-auto font-mono">
+                        {config}
+                    </pre>
+                )}
             </div>
         )
     }

@@ -9,11 +9,20 @@ import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { ChartView } from "@/components/chat/ChartView"
+import { Button } from "@/components/ui/button"
 import { buildClientApiHeaders } from "@/lib/client-api"
 import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 
-// localStorage key for chat history
-const getChatStorageKey = (reportId: string) => `chat_history_${reportId}`
+// localStorage keys
+const getSessionsKey = (reportId: string) => `chat_sessions_v2_${reportId}`
+const getSessionMessagesKey = (reportId: string, sessionId: string) => `chat_messages_v2_${reportId}_${sessionId}`
+const getLegacyKey = (reportId: string) => `chat_history_${reportId}`
+
+interface ChatSession {
+  id: string
+  title: string
+  updatedAt: string
+}
 
 export default function ChatPage() {
   const params = useParams()
@@ -21,12 +30,15 @@ export default function ChatPage() {
   const reportId = params.reportId as string
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
   const [showHistory, setShowHistory] = useState(true)
   const [showContext, setShowContext] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const loadedSessionIdRef = useRef<string | null>(null)
 
   // 动态加载的报告上下文
   const [reportContext, setReportContext] = useState<{
@@ -36,11 +48,6 @@ export default function ChatPage() {
     title: "加载中...",
     chapters: [],
   })
-
-  // 聊天历史列表
-  const [chatSessions] = useState([
-    { id: reportId, title: "当前对话", time: "活跃中", active: true },
-  ])
 
   // 根据报告章节动态生成推荐问题
   const quickQuestions = reportContext.chapters.length > 0
@@ -92,9 +99,69 @@ export default function ChatPage() {
     loadReportContext()
   }, [reportId])
 
-  // ——— 加载聊天历史 ———
+  // ——— 加载会话列表及历史 ———
   useEffect(() => {
-    const stored = localStorage.getItem(getChatStorageKey(reportId))
+    const sessionsKey = getSessionsKey(reportId)
+    const legacyKey = getLegacyKey(reportId)
+    const storedSessions = localStorage.getItem(sessionsKey)
+    const legacyData = localStorage.getItem(legacyKey)
+
+    let currentSessions: ChatSession[] = []
+
+    if (storedSessions) {
+      try {
+        currentSessions = JSON.parse(storedSessions)
+      } catch (e) {
+        console.error("Error parsing sessions:", e)
+      }
+    }
+
+    // 迁移旧数据
+    if (legacyData && currentSessions.length === 0) {
+      const sessionId = "legacy-session"
+      try {
+        const legacyMessages = JSON.parse(legacyData)
+        currentSessions = [{
+          id: sessionId,
+          title: "初始对话 (已迁移)",
+          updatedAt: new Date().toISOString()
+        }]
+        localStorage.setItem(getSessionMessagesKey(reportId, sessionId), JSON.stringify(legacyMessages))
+        localStorage.removeItem(legacyKey)
+        localStorage.setItem(sessionsKey, JSON.stringify(currentSessions))
+      } catch (e) {
+        console.error("Error migrating legacy data:", e)
+      }
+    }
+
+    // 如果还没有任何会话，创建一个
+    if (currentSessions.length === 0) {
+      const sessionId = Date.now().toString()
+      currentSessions = [{
+        id: sessionId,
+        title: "新对话",
+        updatedAt: new Date().toISOString()
+      }]
+      localStorage.setItem(sessionsKey, JSON.stringify(currentSessions))
+    }
+
+    setSessions(currentSessions)
+    // 默认激活第一个
+    if (currentSessions.length > 0) {
+      setActiveSessionId(currentSessions[0].id)
+    }
+  }, [reportId])
+
+  // 切换会话时加载消息
+  useEffect(() => {
+    if (!activeSessionId) return
+
+    const messagesKey = getSessionMessagesKey(reportId, activeSessionId)
+    const stored = localStorage.getItem(messagesKey)
+
+    // 标记当前正在加载这个会话
+    loadedSessionIdRef.current = activeSessionId
+
     if (stored) {
       try {
         const parsed = JSON.parse(stored)
@@ -104,14 +171,16 @@ export default function ChatPage() {
             timestamp: new Date(m.timestamp),
           }))
         )
-      } catch {
-        // 初始化欢迎消息
+      } catch (e) {
+        console.error("Failed to parse messages for session", activeSessionId, e)
+        setMessages([])
         initWelcomeMessage()
       }
     } else {
+      setMessages([])
       initWelcomeMessage()
     }
-  }, [reportId])
+  }, [activeSessionId, reportId])
 
   function initWelcomeMessage() {
     setMessages([
@@ -126,10 +195,57 @@ export default function ChatPage() {
 
   // ——— 保存聊天历史 ———
   useEffect(() => {
-    if (messages.length > 0 && messages[0]?.id !== "welcome" || messages.length > 1) {
-      localStorage.setItem(getChatStorageKey(reportId), JSON.stringify(messages))
+    if (!activeSessionId || !reportId) return
+
+    // 如果当前内存中的消息还不属于这个 activeSessionId（由于切换延迟），则不要保存，防止覆盖
+    if (loadedSessionIdRef.current !== activeSessionId) return
+
+    // 不要保存欢迎消息（如果是空的）
+    if (messages.length > 0 && (messages[0]?.id !== "welcome" || messages.length > 1)) {
+      localStorage.setItem(getSessionMessagesKey(reportId, activeSessionId), JSON.stringify(messages))
+
+      // 更新会话列表中的最后更新时间
+      setSessions(prev => prev.map(s =>
+        s.id === activeSessionId ? { ...s, updatedAt: new Date().toISOString() } : s
+      ))
     }
-  }, [messages, reportId])
+  }, [messages, reportId, activeSessionId])
+
+  // 持久化会话列表
+  useEffect(() => {
+    if (sessions.length > 0) {
+      localStorage.setItem(getSessionsKey(reportId), JSON.stringify(sessions))
+    }
+  }, [sessions, reportId])
+
+  const createNewSession = () => {
+    const sessionId = Date.now().toString()
+    const newSession: ChatSession = {
+      id: sessionId,
+      title: "新对话",
+      updatedAt: new Date().toISOString()
+    }
+    setSessions(prev => [newSession, ...prev])
+    setActiveSessionId(sessionId)
+    setMessages([]) // 切换 useEffect 会处理加载
+  }
+
+  const deleteSession = (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation()
+    const newSessions = sessions.filter(s => s.id !== sessionId)
+    if (newSessions.length === 0) {
+      // 至少保留一个
+      createNewSession()
+      return
+    }
+
+    setSessions(newSessions)
+    localStorage.removeItem(getSessionMessagesKey(reportId, sessionId))
+
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(newSessions[0].id)
+    }
+  }
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -278,6 +394,14 @@ export default function ChatPage() {
             : m
         )
       )
+
+      // 如果是第一条用户消息，尝试重命名会话
+      if (messages.length <= 1) {
+        const newTitle = input.slice(0, 15) + (input.length > 15 ? "..." : "")
+        setSessions(prev => prev.map(s =>
+          s.id === activeSessionId ? { ...s, title: newTitle } : s
+        ))
+      }
     } catch (error) {
       console.error("Chat error:", error)
       const message = formatClientErrorMessage(error, "未知错误")
@@ -302,7 +426,8 @@ export default function ChatPage() {
   }
 
   const clearHistory = () => {
-    localStorage.removeItem(getChatStorageKey(reportId))
+    if (!activeSessionId) return
+    localStorage.removeItem(getSessionMessagesKey(reportId, activeSessionId))
     initWelcomeMessage()
   }
 
@@ -372,51 +497,70 @@ export default function ChatPage() {
       <div className="flex h-[calc(100vh-110px)] pt-[110px]">
         {/* ═══════ 左侧栏 - 聊天历史 ═══════ */}
         {showHistory ? (
-          <aside className="w-64 flex-shrink-0 border-r border-border/60 flex flex-col bg-muted/20">
+          <aside className="w-72 flex-shrink-0 border-r border-border/60 flex flex-col bg-muted/20">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
               <span className="text-sm font-semibold text-foreground">聊天历史</span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={clearHistory}
-                  className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
-                  title="清除历史"
-                >
-                  <i className="fas fa-trash-alt text-xs text-muted-foreground" />
-                </button>
-                <button
-                  onClick={() => setShowHistory(false)}
-                  className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
-                >
-                  <i className="fas fa-chevron-left text-xs text-muted-foreground" />
-                </button>
-              </div>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+              >
+                <i className="fas fa-chevron-left text-xs text-muted-foreground" />
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {chatSessions.map((item, idx) => (
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              <button
+                onClick={createNewSession}
+                className="w-full text-left px-3 py-3 rounded-xl border border-dashed border-slate-300/80 bg-transparent text-slate-500 hover:bg-white/50 hover:border-primary/50 hover:text-primary transition-all mb-4 group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                    <i className="fas fa-plus text-xs" />
+                  </div>
+                  <span className="text-sm font-medium">新建对话</span>
+                </div>
+              </button>
+
+              {sessions.map((session) => (
                 <div
-                  key={idx}
+                  key={session.id}
+                  onClick={() => setActiveSessionId(session.id)}
                   className={cn(
-                    "px-3 py-3 rounded-lg cursor-pointer transition-all text-sm",
-                    item.active
-                      ? "bg-primary/10 border-l-2 border-primary"
-                      : "hover:bg-muted/60"
+                    "px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1",
+                    activeSessionId === session.id
+                      ? "bg-white border-slate-200/60 shadow-sm"
+                      : "bg-transparent border-transparent hover:bg-white/40"
                   )}
                 >
-                  <div className="font-medium text-[13px] text-foreground mb-0.5">{item.title}</div>
-                  <div className="text-[11px] text-muted-foreground">{item.time}</div>
+                  <div className={cn(
+                    "font-medium text-sm truncate mb-1",
+                    activeSessionId === session.id ? "text-primary font-semibold" : "text-slate-700"
+                  )}>
+                    {session.title}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                    <i className="far fa-clock text-[9px] opacity-70" />
+                    {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                  </div>
                 </div>
               ))}
             </div>
           </aside>
         ) : (
-          <aside className="w-12 flex-shrink-0 border-r border-border/60 flex flex-col items-center pt-3">
+          <aside className="w-12 flex-shrink-0 border-r border-border/60 flex flex-col items-center pt-3 bg-muted/10">
             <button
               onClick={() => setShowHistory(true)}
               className="w-8 h-8 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
               title="展开聊天历史"
             >
               <i className="fas fa-chevron-right text-xs text-muted-foreground" />
+            </button>
+            <button
+              onClick={createNewSession}
+              className="mt-2 w-8 h-8 rounded-md hover:bg-primary/10 flex items-center justify-center transition-colors text-primary"
+              title="新建对话"
+            >
+              <i className="fas fa-plus text-xs" />
             </button>
           </aside>
         )}

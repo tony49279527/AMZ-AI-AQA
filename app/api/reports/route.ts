@@ -3,7 +3,8 @@ import fs from "fs"
 import path from "path"
 import { enforceApiGuard } from "@/lib/server/api-guard"
 import { apiError, withApiAudit } from "@/lib/server/api-response"
-import { parseReportIdFromFilename } from "@/lib/server/report-storage"
+import { getReportFilePath, getReportMetaFilePath, parseReportIdFromFilename, writeFileAtomically } from "@/lib/server/report-storage"
+import { ReportMetadata, ReportDataFile } from "@/lib/report-metadata"
 
 // 扫描 content/reports/ 目录，提取报告元数据
 export async function GET(request: NextRequest) {
@@ -24,39 +25,54 @@ export async function GET(request: NextRequest) {
                 const id = parseReportIdFromFilename(file)
                 if (!id) return []
 
-                const content = fs.readFileSync(path.join(reportsDir, file), "utf-8")
-                const stat = fs.statSync(path.join(reportsDir, file))
+                const metaPath = getReportMetaFilePath(id)
+                const mdPath = getReportFilePath(id)
+                const stat = fs.statSync(mdPath)
 
-                const titleMatch = content.match(/^#\s+(.+)$/m)
-                const rawTitle = titleMatch ? titleMatch[1].replace(/\*+/g, "").trim() : file
+                let meta: ReportMetadata | null = null
 
-                const chapters = content
-                    .split("\n")
-                    .filter((line) => line.startsWith("## "))
-                    .map((line, idx) => ({
-                        id: `ch-${idx + 1}`,
-                        title: line.replace("## ", "").trim(),
-                    }))
-
-                const lines = content.split("\n")
-                let summary = ""
-                for (const line of lines) {
-                    const trimmed = line.trim()
-                    if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("---") && !trimmed.startsWith("*")) {
-                        summary = trimmed.slice(0, 120)
-                        break
+                // 尝试读取现有的元数据
+                if (fs.existsSync(metaPath)) {
+                    try {
+                        meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"))
+                    } catch (e) {
+                        console.error(`Failed to parse meta for ${id}:`, e)
                     }
                 }
 
+                // 如果没有元数据，走极简版提取（只读第一行），不读取整个大文件
+                if (!meta) {
+                    const fd = fs.openSync(mdPath, 'r')
+                    const buffer = Buffer.alloc(512)
+                    fs.readSync(fd, buffer, 0, 512, 0)
+                    fs.closeSync(fd)
+                    const preview = buffer.toString('utf-8')
+                    const titleMatch = preview.match(/^#\s+(.+)$/m)
+                    const title = titleMatch ? titleMatch[1].replace(/\*+/g, "").trim() : id
+
+                    return {
+                        id,
+                        title,
+                        status: "completed" as const,
+                        progress: 100,
+                        createdAt: stat.birthtime.toISOString(),
+                        updatedAt: stat.mtime.toISOString(),
+                        chapters: [], // 列表页不强制需要章节信息
+                        summary: "暂无摘要",
+                        fileSize: stat.size,
+                    }
+                }
+
+                // 使用元数据返回，极快
                 return {
                     id,
-                    title: rawTitle,
+                    title: meta.title,
                     status: "completed" as const,
                     progress: 100,
-                    createdAt: stat.birthtime.toISOString(),
-                    updatedAt: stat.mtime.toISOString(),
-                    chapters,
-                    summary,
+                    createdAt: meta.createdAt,
+                    updatedAt: meta.updatedAt,
+                    chapters: [], // 列表页默认不传完整章节，减少 Payload
+                    summary: `${meta.marketplace} | ${meta.language} | ${meta.model}`,
                     fileSize: stat.size,
                 }
             })
