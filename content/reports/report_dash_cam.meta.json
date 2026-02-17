@@ -1,0 +1,34 @@
+{
+    "reportId": "dash_cam",
+    "title": "AI竞品分析报告-行车记录仪-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B0FC6S2R7K"
+    ],
+    "competitorAsins": [
+        "B0DRFRKN6H",
+        "B0DQP5XZLB",
+        "B0FRSHYQ25",
+        "B0F8MJ6XYD",
+        "B0DT5JGW7V",
+        "B0F1N2HHKP"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T11:57:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B0FC6S2R7K)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}

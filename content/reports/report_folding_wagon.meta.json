@@ -1,0 +1,35 @@
+{
+    "reportId": "folding_wagon",
+    "title": "AI竞品分析报告-折叠露营车-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B0CLVG52J3"
+    ],
+    "competitorAsins": [
+        "B0DHRHL3XD",
+        "B0CYTCS62Y",
+        "B0DPH1F6ZY",
+        "B0DJ7RPXF8",
+        "B0DNDRBV11",
+        "B0FCF1PNLB",
+        "B0CHDQ9BKL"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T11:55:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B0CLVG52J3)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}

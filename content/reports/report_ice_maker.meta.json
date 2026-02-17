@@ -1,0 +1,33 @@
+{
+    "reportId": "ice_maker",
+    "title": "AI竞品分析报告-制冰机-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B0F8NKJD6X",
+        "B0FY684J1K"
+    ],
+    "competitorAsins": [
+        "B0BRYTP75X",
+        "B0F64WHP74",
+        "B0DCJ78D27",
+        "B0BL7DCJBH"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T11:59:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B0F8NKJD6X/B0FY684J1K)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}

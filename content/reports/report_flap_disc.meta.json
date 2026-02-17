@@ -1,0 +1,34 @@
+{
+    "reportId": "flap_disc",
+    "title": "AI竞品分析报告-百叶轮 / 抛光片-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B085C29LK3"
+    ],
+    "competitorAsins": [
+        "B01D0HA3LK",
+        "B07W4M4JXF",
+        "B08DTRRDT8",
+        "B0D6QTVJ29",
+        "B07W6LNRXM",
+        "B0CS67JT54"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T10:00:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B085C29LK3)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}

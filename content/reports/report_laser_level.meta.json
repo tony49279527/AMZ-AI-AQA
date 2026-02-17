@@ -1,0 +1,35 @@
+{
+    "reportId": "laser_level",
+    "title": "AI竞品分析报告-激光水平仪-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B0CKJXX4XR"
+    ],
+    "competitorAsins": [
+        "B09G6R1DL1",
+        "B0CFF83CWW",
+        "B09N3JTK8Y",
+        "B003825F0M",
+        "B0CJMCD768",
+        "B07VPH48T9",
+        "B09B3F7SK2"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T04:08:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B0CKJXX4XR)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}

@@ -1,0 +1,34 @@
+{
+    "reportId": "car_polisher",
+    "title": "AI竞品分析报告-汽车抛光机套件-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B01BKT63XM"
+    ],
+    "competitorAsins": [
+        "B0B7WMFW4L",
+        "B0DT8WN7J7",
+        "B0BBQXFRP1",
+        "B0092K1F2Q",
+        "B01N909O6H",
+        "B089JFDKRZ"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T04:05:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B01BKT63XM)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}

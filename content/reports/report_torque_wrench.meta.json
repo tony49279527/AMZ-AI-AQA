@@ -1,0 +1,33 @@
+{
+    "reportId": "torque_wrench",
+    "title": "AI竞品分析报告-扭力扳手-C4.5",
+    "source": "featured",
+    "coreAsins": [
+        "B07SQM2RQR"
+    ],
+    "competitorAsins": [
+        "B0B9HRN1NL",
+        "B0CY5CQF8Y",
+        "B0D83LBS6Q",
+        "B01AY0JG0U",
+        "B08V8KFC26"
+    ],
+    "marketplace": "US",
+    "language": "Chinese",
+    "model": "unknown",
+    "websiteCount": 0,
+    "youtubeCount": 0,
+    "createdAt": "2026-02-17",
+    "updatedAt": "2026-02-17T03:32:00.000Z",
+    "dataFiles": [
+        {
+            "id": "legacy-core-1",
+            "category": "亚马逊数据",
+            "name": "Amazon Product Page (B07SQM2RQR)",
+            "size": "N/A",
+            "icon": "fa-shopping-cart text-slate-400",
+            "addedAt": "2026-02-17",
+            "source": "系统采集"
+        }
+    ]
+}
