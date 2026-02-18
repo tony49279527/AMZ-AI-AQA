@@ -24,7 +24,9 @@ export class ErrorBoundary extends Component<Props, State> {
     }
   }
 
-  static getDerivedStateFromError(error: Error): Partial<State> {
+  // React 要求此方法签名包含 error 参数，此处仅需设置 hasError
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  static getDerivedStateFromError(_error: Error): Partial<State> {
     return { hasError: true }
   }
 
@@ -78,19 +80,26 @@ export class ErrorBoundary extends Component<Props, State> {
                   <button
                     onClick={this.handleReset}
                     className="flex-1 px-4 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                    aria-label="重新加载页面"
                   >
                     重新加载
                   </button>
                   <button
                     onClick={() => window.location.href = "/dashboard"}
                     className="flex-1 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 transition-colors"
+                    aria-label="返回仪表板"
                   >
                     返回首页
                   </button>
                 </div>
 
                 <p className="text-center text-xs text-slate-400 mt-4">
-                  如果问题持续存在，请<a href="mailto:support@example.com" className="text-blue-600 hover:underline">联系支持</a>
+                  如果问题持续存在，请
+                  {process.env.NEXT_PUBLIC_SUPPORT_EMAIL ? (
+                    <a href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL}`} className="text-blue-600 hover:underline">联系支持</a>
+                  ) : (
+                    <span className="text-slate-500">联系管理员</span>
+                  )}
                 </p>
               </div>
             </div>

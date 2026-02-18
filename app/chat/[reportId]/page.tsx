@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { ChartView } from "@/components/chat/ChartView"
-import { Button } from "@/components/ui/button"
 import { buildClientApiHeaders } from "@/lib/client-api"
 import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 
@@ -230,6 +229,8 @@ export default function ChatPage() {
     setMessages([]) // 切换 useEffect 会处理加载
   }
 
+  // 预留：会话删除（待与 UI 联动）
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 预留供后续会话列表删除按钮使用
   const deleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation()
     const newSessions = sessions.filter(s => s.id !== sessionId)
@@ -425,6 +426,8 @@ export default function ChatPage() {
     navigator.clipboard.writeText(content)
   }
 
+  // 预留：清空当前会话消息（待与 UI 联动）
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 预留供设置/更多操作使用
   const clearHistory = () => {
     if (!activeSessionId) return
     localStorage.removeItem(getSessionMessagesKey(reportId, activeSessionId))
@@ -638,8 +641,8 @@ export default function ChatPage() {
                 <i className="fas fa-download text-[10px]" />
                 导出
               </button>
-              <button className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors text-slate-500" title="设置">
-                <i className="fas fa-sliders-h text-sm" />
+                <button className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors text-slate-500" title="设置" aria-label="设置">
+                <i className="fas fa-sliders-h text-sm" aria-hidden />
               </button>
             </div>
           </div>
@@ -689,7 +692,7 @@ export default function ChatPage() {
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
-                              code({ inline, className, children, ...props }: any) {
+                              code({ inline, className, children, ...props }: { inline?: boolean; className?: string; children?: React.ReactNode; [k: string]: unknown }) {
                                 if (className === "language-json:chart") {
                                   return <ChartView config={String(children).replace(/\n$/, "")} />
                                 }
@@ -751,8 +754,8 @@ export default function ChatPage() {
                               {message.timestamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                             </span>
                             <div className="flex items-center gap-1">
-                              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="复制" onClick={() => copyMessage(message.content)}>
-                                <i className="far fa-copy text-xs" />
+                              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="复制" aria-label="复制内容" onClick={() => copyMessage(message.content)}>
+                                <i className="far fa-copy text-xs" aria-hidden />
                               </button>
                               <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="有用">
                                 <i className="far fa-thumbs-up text-xs" />

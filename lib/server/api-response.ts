@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
+import { getClientIp } from "@/lib/server/request-utils"
 
 type ApiErrorOptions = {
   status: number
@@ -10,15 +11,6 @@ type ApiErrorOptions = {
 
 type AuditContext = {
   requestId: string
-}
-
-function getClientIp(request: NextRequest): string {
-  const forwardedFor = request.headers.get("x-forwarded-for")
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() || "unknown"
-  }
-
-  return request.headers.get("x-real-ip") ?? "unknown"
 }
 
 export function getOrCreateRequestId(request: NextRequest): string {

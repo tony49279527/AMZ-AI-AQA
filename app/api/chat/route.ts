@@ -2,7 +2,8 @@ import { NextRequest } from "next/server"
 import fs from "fs"
 import { enforceApiGuard } from "@/lib/server/api-guard"
 import { apiError, withApiAudit } from "@/lib/server/api-response"
-import { getReportFilePath, isValidReportId } from "@/lib/server/report-storage"
+import { getReportFilePath, getReportSourcesFilePath, isValidReportId } from "@/lib/server/report-storage"
+import type { ReportSourceItem } from "@/lib/report-metadata"
 
 type ChatInputMessage = { role: "user" | "assistant"; content: string }
 
@@ -68,6 +69,83 @@ function loadReportContent(reportId: string): string | null {
     } catch {
         return null
     }
+}
+
+const SOURCE_CHUNK_SIZE = 2400
+const SOURCE_CHUNK_OVERLAP = 300
+
+/** 将长文本切成多段，每段带来源标签 */
+function chunkSourceContent(content: string, sourceLabel: string): ReportSection[] {
+    if (!content || content.length <= SOURCE_CHUNK_SIZE) {
+        return content ? [{ title: sourceLabel, content }] : []
+    }
+    const sections: ReportSection[] = []
+    let start = 0
+    let index = 1
+    while (start < content.length) {
+        let end = start + SOURCE_CHUNK_SIZE
+        if (end < content.length) {
+            const nextNewline = content.indexOf("\n", end)
+            if (nextNewline !== -1 && nextNewline < end + 200) end = nextNewline + 1
+        }
+        const slice = content.slice(start, end).trim()
+        if (slice) {
+            sections.push({
+                title: `${sourceLabel} (片段${index})`,
+                content: slice,
+            })
+            index++
+        }
+        start = end - SOURCE_CHUNK_OVERLAP
+        if (start >= content.length) break
+    }
+    return sections
+}
+
+function sourceTypeToLabel(source_type: string): string {
+    const map: Record<string, string> = {
+        product_info: "产品信息",
+        reviews: "产品评论",
+        reference_site: "参考网站",
+        reference_youtube: "参考 YouTube",
+        return_report: "退货报告",
+        persona: "人群画像",
+    }
+    return map[source_type] ?? source_type
+}
+
+/** 加载报告抓取来源（供智能问答检索） */
+function loadReportSources(reportId: string): ReportSourceItem[] | null {
+    try {
+        const filePath = getReportSourcesFilePath(reportId)
+        if (!fs.existsSync(filePath)) return null
+        const raw = fs.readFileSync(filePath, "utf-8")
+        const items = JSON.parse(raw) as ReportSourceItem[]
+        return Array.isArray(items) ? items : null
+    } catch {
+        return null
+    }
+}
+
+/** 将报告章节 + 抓取来源转为统一 Section 列表（来源内容按块切分） */
+function buildReportAndSourceSections(reportContent: string, sourceItems: ReportSourceItem[] | null): ReportSection[] {
+    const reportSections = parseReportSections(reportContent)
+    const withPrefix = reportSections.map((s) => ({ title: `报告 - ${s.title}`, content: s.content }))
+
+    if (!sourceItems || sourceItems.length === 0) {
+        return withPrefix
+    }
+
+    const sourceSections: ReportSection[] = []
+    for (const item of sourceItems) {
+        const typeLabel = sourceTypeToLabel(item.source_type)
+        const shortLabel = item.display_label.length > 40 ? item.display_label.slice(0, 37) + "…" : item.display_label
+        const sourceLabel = `抓取资料 - ${typeLabel} · ${shortLabel}`
+        const chunks = chunkSourceContent(item.content, sourceLabel)
+        sourceSections.push(...chunks)
+    }
+
+    return [...withPrefix, ...sourceSections]
 }
 
 function parseReportSections(reportContent: string): ReportSection[] {
@@ -139,17 +217,21 @@ function rankSectionsByQuery(sections: ReportSection[], query: string): ReportSe
     return scored.map((item) => item.section)
 }
 
-function selectRelevantContext(reportContent: string, messages: ChatInputMessage[]): RetrievedContext {
-    const sections = parseReportSections(reportContent)
-    if (sections.length === 0) {
+function selectRelevantContext(
+    reportContent: string,
+    messages: ChatInputMessage[],
+    sourceItems: ReportSourceItem[] | null
+): RetrievedContext {
+    const allSections = buildReportAndSourceSections(reportContent, sourceItems)
+    if (allSections.length === 0) {
         return { totalSections: 0, selectedSections: [] }
     }
 
     const latestUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
-    const rankedSections = rankSectionsByQuery(sections, latestUserMessage)
+    const rankedSections = rankSectionsByQuery(allSections, latestUserMessage)
 
-    const maxSections = 6
-    const maxChars = 12_000
+    const maxSections = 12
+    const maxChars = 22_000
 
     const selectedSections: ReportSection[] = []
     let usedChars = 0
@@ -167,28 +249,32 @@ function selectRelevantContext(reportContent: string, messages: ChatInputMessage
     }
 
     if (selectedSections.length === 0) {
-        selectedSections.push(...sections.slice(0, Math.min(3, sections.length)))
+        selectedSections.push(...allSections.slice(0, Math.min(5, allSections.length)))
     }
 
     return {
-        totalSections: sections.length,
+        totalSections: allSections.length,
         selectedSections,
     }
 }
 
 // 构建 system prompt
-function buildSystemPrompt(context: RetrievedContext): string {
+function buildSystemPrompt(context: RetrievedContext, hasSourceData: boolean): string {
     const selectedContent = context.selectedSections
         .map((section) => `## ${section.title}\n\n${section.content}`)
         .join("\n\n---\n\n")
 
-    return `你是一个专业的亚马逊产品分析助手。你的职责是**严格基于以下分析报告**回答用户的问题。
+    const dataScope = hasSourceData
+        ? "以下内容包含**分析报告**与**生成报告时抓取的全部资料**（产品信息、评论、参考网站、YouTube 字幕、退货报告、人群画像等）。"
+        : "以下为分析报告内容。"
+
+    return `你是一个专业的亚马逊产品分析助手。你的职责是**严格基于下方提供的报告与抓取资料**回答用户的问题。
 
 ## 核心规则（必须遵守）
-1. **严格基于报告回答**：你的所有回答必须来自下方提供的报告内容。禁止编造数据或引用外部信息。
-2. **如实标注不确定性**：如果报告中没有相关信息，你必须明确说明"报告中未涉及此内容"，而非猜测。
-3. **引用来源**：当引用报告中的具体数据或结论时，在该段落末尾标注 [来源: 章节名称]。每个回答至少标注一个来源。
-4. **拒绝无关问题**：如果用户的问题与报告内容完全无关（如闲聊、编程、其他领域问题），礼貌提示用户本系统仅回答与报告相关的问题。
+1. **严格基于提供的内容回答**：你的所有回答必须来自下方提供的报告与抓取资料。禁止编造数据或引用外部信息。
+2. **如实标注不确定性**：若提供的片段中无相关信息，明确说明"当前检索内容未覆盖该信息"，而非猜测。
+3. **引用来源**：当引用具体数据或结论时，在该段落末尾标注来源，例如 [来源: 报告 - 市场与客群洞察]、[来源: 抓取资料 - 参考网站 reddit.com]、[来源: 产品评论]。每个回答至少标注一个来源。
+4. **拒绝无关问题**：若用户问题与报告/产品分析完全无关，礼貌提示本系统仅回答与报告及背后资料相关的问题。
 
 ## 图表展示协议 (json:chart)
 当你需要通过直观的方式（如价格对比、评分分布、趋势分析）展示数据时，可以使用特殊的代码块生成图表。
@@ -215,14 +301,15 @@ function buildSystemPrompt(context: RetrievedContext): string {
 - 在适当时给出 **可操作的建议**，而非仅描述现状
 - 如果用户问到关于产品图片的问题，基于报告中的产品特点和用户痛点给出详细的拍摄/设计建议
 
-## 分析报告内容（检索片段）
-共 ${context.totalSections} 个章节，当前提供 ${context.selectedSections.length} 个相关章节片段。
-如果用户问题超出这些片段范围，你必须明确说明“当前检索片段未覆盖该信息”。
+## 可用内容（报告 + 抓取资料检索片段）
+${dataScope}
+共 ${context.totalSections} 个片段，当前提供 ${context.selectedSections.length} 个与用户问题最相关的片段。
+若用户问题超出这些片段范围，请明确说明“当前检索内容未覆盖该信息”。
 
 ${selectedContent}
 
 ---
-以上是当前可用的报告检索片段。请严格基于这些信息回答用户的问题，不要引用任何外部数据。`
+以上是当前可用的检索片段。请严格基于这些信息回答，并标注来源（报告章节或抓取资料名称）。`
 }
 
 export async function POST(request: NextRequest) {
@@ -249,17 +336,20 @@ export async function POST(request: NextRequest) {
                 return apiError("Report not found", { status: 404, code: "REPORT_NOT_FOUND", requestId })
             }
 
+            const sourceItems = loadReportSources(reportId)
+            const retrievedContext = selectRelevantContext(reportContent, messages, sourceItems)
+            const hasSourceData = Array.isArray(sourceItems) && sourceItems.length > 0
+
             const apiKey = process.env.OPENROUTER_API_KEY
             const baseUrl = process.env.LLM_BASE_URL || "https://openrouter.ai/api/v1"
-            const model = requestModel || process.env.LLM_MODEL || "google/gemini-2.0-flash-001"
+            const model = requestModel || process.env.LLM_MODEL || "anthropic/claude-sonnet-4.5"
 
             if (!apiKey) {
                 return apiError("API key not configured", { status: 500, code: "LLM_API_KEY_MISSING", requestId })
             }
 
-            const retrievedContext = selectRelevantContext(reportContent, messages)
             const fullMessages = [
-                { role: "system", content: buildSystemPrompt(retrievedContext) },
+                { role: "system", content: buildSystemPrompt(retrievedContext, hasSourceData) },
                 ...messages,
             ]
 
@@ -268,7 +358,7 @@ export async function POST(request: NextRequest) {
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${apiKey}`,
-                    "HTTP-Referer": "https://amzaiagent.com",
+                    "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || process.env.NEXT_PUBLIC_APP_URL || "https://amzaiagent.com",
                     "X-Title": "AmaQ Ops - AI Report System",
                 },
                 body: JSON.stringify({
@@ -283,12 +373,17 @@ export async function POST(request: NextRequest) {
             if (!llmResponse.ok) {
                 const errorText = await llmResponse.text()
                 console.error("LLM API error:", llmResponse.status, errorText)
-                return apiError(`LLM API error: ${llmResponse.status}`, {
-                    status: 502,
-                    code: "LLM_UPSTREAM_ERROR",
-                    requestId,
-                    details: errorText,
-                })
+                return apiError(
+                    process.env.NODE_ENV === "production"
+                        ? "语言服务暂时不可用，请稍后重试"
+                        : `LLM API error: ${llmResponse.status}`,
+                    {
+                        status: 502,
+                        code: "LLM_UPSTREAM_ERROR",
+                        requestId,
+                        details: process.env.NODE_ENV === "production" ? undefined : errorText,
+                    }
+                )
             }
 
             const encoder = new TextEncoder()

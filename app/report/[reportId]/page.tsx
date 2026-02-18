@@ -13,9 +13,17 @@ import { buildClientApiHeaders } from "@/lib/client-api"
 import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 import type { ReportDataFile, ReportMetadata } from "@/lib/report-metadata"
 
+/** 数据源列表项（来自 GET /api/report-sources，无 content） */
+type ReportSourceListItem = {
+  source_type: string
+  source_key: string
+  display_label: string
+  char_count: number
+}
+
 type ReportConfig = Pick<
   ReportMetadata,
-  "coreAsins" | "competitorAsins" | "marketplace" | "language" | "model" | "websiteCount" | "youtubeCount" | "title" | "createdAt"
+  "coreAsins" | "competitorAsins" | "marketplace" | "language" | "model" | "websiteCount" | "youtubeCount" | "title" | "createdAt" | "possiblyTruncated"
 >
 
 function getQaIntroSeenKey(reportId: string): string {
@@ -38,6 +46,17 @@ function hasChatHistory(reportId: string): boolean {
   }
 }
 
+/** 规范化报告 Markdown，减少模型输出导致的乱码与排版问题 */
+function normalizeReportMarkdown(raw: string): string {
+  return raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim()
+}
+
 export default function ReportDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -51,6 +70,8 @@ export default function ReportDetailPage() {
   const [activeSection, setActiveSection] = useState("")
   const [markdown, setMarkdown] = useState("")
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   // 动态从 Markdown 提取目录章节 (提取 ## 和 ### 级别的标题)
   const [sections, setSections] = useState<{ id: string; title: string; level: number }[]>([])
@@ -80,12 +101,14 @@ export default function ReportDetailPage() {
 
   useEffect(() => {
     async function fetchReport() {
+      setLoadError(null)
       try {
         const response = await fetch(`/api/report/${reportId}`, {
           headers: buildClientApiHeaders(),
         })
         if (response.ok) {
-          const text = await response.text()
+          const rawText = await response.text()
+          const text = normalizeReportMarkdown(rawText)
           setMarkdown(text)
 
           // 提取目录 (## 为 level 2, ### 为 level 3)
@@ -103,17 +126,17 @@ export default function ReportDetailPage() {
             })
           setSections(extractedSections)
         } else {
-          console.error("Failed to fetch report")
+          setLoadError(`加载失败 (HTTP ${response.status})，请稍后重试`)
         }
       } catch (error) {
-        console.error("Error fetching report:", error)
+        setLoadError(error instanceof Error ? error.message : "加载报告时出错，请稍后重试")
       } finally {
         setLoading(false)
       }
     }
 
     fetchReport()
-  }, [reportId])
+  }, [reportId, retryCount])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -145,6 +168,7 @@ export default function ReportDetailPage() {
 
   const [reportConfig, setReportConfig] = useState<ReportConfig | null>(null)
   const [dataFiles, setDataFiles] = useState<ReportDataFile[]>([])
+  const [reportSources, setReportSources] = useState<ReportSourceListItem[]>([])
 
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -172,6 +196,7 @@ export default function ReportDetailPage() {
           youtubeCount: metadata.youtubeCount,
           title: metadata.title,
           createdAt: metadata.createdAt,
+          possiblyTruncated: metadata.possiblyTruncated,
         })
         setDataFiles(metadata.dataFiles || [])
       } catch (error) {
@@ -180,6 +205,20 @@ export default function ReportDetailPage() {
     }
 
     fetchReportMetadata()
+  }, [reportId])
+
+  useEffect(() => {
+    async function fetchReportSources() {
+      try {
+        const res = await fetch(`/api/report-sources/${reportId}`, { headers: buildClientApiHeaders() })
+        if (!res.ok) return
+        const data = (await res.json()) as { items?: ReportSourceListItem[] }
+        setReportSources(Array.isArray(data.items) ? data.items : [])
+      } catch {
+        setReportSources([])
+      }
+    }
+    fetchReportSources()
   }, [reportId])
 
   const persistDataFiles = async (nextFiles: ReportDataFile[]): Promise<boolean> => {
@@ -445,6 +484,20 @@ export default function ReportDetailPage() {
                     </button>
                   </div>
 
+                  {reportConfig?.possiblyTruncated && (
+                    <div className="mb-8 no-print rounded-xl border border-amber-200 bg-amber-50/80 p-5 flex items-start gap-4">
+                      <span className="text-amber-600 text-xl flex-shrink-0" aria-hidden>
+                        <i className="fas fa-exclamation-triangle" />
+                      </span>
+                      <div>
+                        <p className="font-semibold text-amber-900 mb-1">报告可能未完整生成</p>
+                        <p className="text-sm text-amber-800">
+                          当前模型输出长度已达上限，报告后半部分可能被截断。建议在「新建报告」中换用支持更长输出的模型（如 Gemini、GPT-5.2、DeepSeek 等）使用相同配置重新生成，以获得完整报告。
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {loading ? (
                     <div className="space-y-12 py-4">
                       <div className="space-y-4">
@@ -465,8 +518,21 @@ export default function ReportDetailPage() {
                         <Skeleton className="h-4 w-[98%]" />
                       </div>
                     </div>
+                  ) : loadError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50/50 p-8 text-center">
+                      <p className="text-red-700 font-medium mb-4">{loadError}</p>
+                      <Button
+                        onClick={() => { setLoading(true); setRetryCount((c) => c + 1) }}
+                        variant="outline"
+                        className="gap-2"
+                        aria-label="重试加载报告"
+                      >
+                        <i className="fas fa-rotate-right" aria-hidden />
+                        重试
+                      </Button>
+                    </div>
                   ) : (
-                    <div id="markdown-content">
+                    <div id="markdown-content" className="report-markdown">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
@@ -504,26 +570,27 @@ export default function ReportDetailPage() {
                             <h4 className="text-[18px] font-bold text-slate-900 mt-8 mb-4 underline decoration-blue-500/30 underline-offset-4" {...props} />
                           ),
                           p: ({ ...props }) => (
-                            <p className="text-slate-600 text-[17px] leading-[1.8] mb-6" {...props} />
+                            <p className="text-slate-600 text-[17px] leading-[1.8] mb-6 whitespace-pre-wrap break-words" {...props} />
                           ),
                           ul: ({ ...props }) => <ul className="list-disc pl-6 mb-8 space-y-3" {...props} />,
                           ol: ({ ...props }) => <ol className="list-decimal pl-6 mb-8 space-y-3" {...props} />,
                           li: ({ ...props }) => <li className="text-slate-600 text-[17px] leading-[1.8]" {...props} />,
                           table: ({ ...props }) => (
-                            <div className="overflow-x-auto my-10 border border-slate-200 rounded-xl">
-                              <table className="w-full border-collapse" {...props} />
+                            <div className="overflow-x-auto my-10 border border-slate-200 rounded-xl shadow-sm">
+                              <table className="w-full border-collapse min-w-[400px]" style={{ tableLayout: "auto" }} {...props} />
                             </div>
                           ),
-                          thead: ({ ...props }) => <thead className="bg-slate-50" {...props} />,
+                          thead: ({ ...props }) => <thead className="bg-slate-50 border-b-2 border-slate-200" {...props} />,
                           th: ({ ...props }) => (
                             <th
-                              className="px-6 py-4 text-left text-sm font-bold text-slate-900 border-b border-slate-200"
+                              className="px-4 py-3 text-left text-sm font-bold text-slate-900 border border-slate-200 break-words align-top"
                               {...props}
                             />
                           ),
                           td: ({ ...props }) => (
-                            <td className="px-6 py-4 text-sm text-slate-600 border-b border-slate-100" {...props} />
+                            <td className="px-4 py-3 text-sm text-slate-600 border border-slate-100 break-words align-top whitespace-normal" {...props} />
                           ),
+                          tbody: ({ ...props }) => <tbody className="bg-white" {...props} />,
                           img: ({ ...props }) => (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -546,7 +613,7 @@ export default function ReportDetailPage() {
                             )
                           },
                           pre: ({ ...props }) => (
-                            <pre className="bg-slate-900 rounded-xl my-6 overflow-x-auto" {...props} />
+                            <pre className="bg-slate-900 rounded-xl my-6 overflow-x-auto text-sm font-mono whitespace-pre-wrap break-words p-6" {...props} />
                           ),
                         }}
                       >
@@ -587,6 +654,57 @@ export default function ReportDetailPage() {
 
         <TabsContent value="sources" className="focus-visible:outline-none focus-visible:ring-0 m-0 pt-[160px]">
           <main className="max-w-7xl mx-auto px-6 pb-16 space-y-8">
+
+            {/* ── 本报告引用的数据来源（系统采集的链接与字数） ── */}
+            {reportSources.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-1.5 h-8 bg-blue-600 rounded-full"></div>
+                  <h2 className="text-2xl font-bold text-slate-900 tracking-tight">本报告引用的数据来源</h2>
+                  <span className="text-sm text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">{reportSources.length} 条</span>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">类型</th>
+                        <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">名称 / 链接</th>
+                        <th className="px-5 py-3.5 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">约字数</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {reportSources.map((item, idx) => {
+                        const typeLabel =
+                          item.source_type === "product_info" ? "产品信息" :
+                          item.source_type === "reviews" ? "产品评论" :
+                          item.source_type === "reference_site" ? "参考网站" :
+                          item.source_type === "reference_youtube" ? "参考 YouTube" :
+                          item.source_type === "return_report" ? "退货报告" :
+                          item.source_type === "persona" ? "人群画像" : item.source_type
+                        const isUrl = /^https?:\/\//i.test(item.source_key)
+                        return (
+                          <tr key={`${item.source_type}-${idx}`} className="hover:bg-slate-50/50">
+                            <td className="px-5 py-3.5">
+                              <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">{typeLabel}</span>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              {isUrl ? (
+                                <a href={item.source_key} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-md inline-block" title={item.source_key}>
+                                  {item.display_label || item.source_key}
+                                </a>
+                              ) : (
+                                <span className="text-sm text-slate-800">{item.display_label}</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3.5 text-right text-sm text-slate-500">约 {item.char_count.toLocaleString()} 字</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* ── Section 1: 报告配置 ── */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
@@ -747,8 +865,8 @@ export default function ReportDetailPage() {
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
                   <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <h3 className="text-lg font-bold text-slate-900">新增数据文件</h3>
-                    <button onClick={() => setShowUploadModal(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors">
-                      <i className="fas fa-xmark text-slate-400"></i>
+                    <button onClick={() => setShowUploadModal(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors" aria-label="关闭">
+                      <i className="fas fa-xmark text-slate-400" aria-hidden></i>
                     </button>
                   </div>
                   <div className="p-6">

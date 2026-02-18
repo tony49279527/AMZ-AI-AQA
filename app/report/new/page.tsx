@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { Navigation } from "@/components/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRouter } from "next/navigation"
 import { buildClientApiHeaders } from "@/lib/client-api"
 import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
+import { DEFAULT_LLM_MODEL, LLM_MODEL_OPTIONS } from "@/lib/constants"
+import { parseAsinListFromText } from "@/lib/utils"
 
 interface FileUpload {
   file: File | null
@@ -32,6 +34,14 @@ export default function NewReportPage() {
   const [chapterStatuses, setChapterStatuses] = useState<Record<number, string>>({})
   const [completionData, setCompletionData] = useState<{ chapters: number; elapsed: number } | null>(null)
   const [dynamicChapters, setDynamicChapters] = useState<{ id: string; title: string }[]>([])
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const logEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (logs.length > 0 && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: "smooth", block: "center" })
+    }
+  }, [logs.length])
 
   // Form state
   const [coreAsins, setCoreAsins] = useState("")
@@ -39,15 +49,28 @@ export default function NewReportPage() {
   const [marketplace, setMarketplace] = useState("US")
   const [title, setTitle] = useState("")
   const [language, setLanguage] = useState("zh")
-  const [llmModel, setLlmModel] = useState("anthropic/claude-sonnet-4")
+  const [llmModel, setLlmModel] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_LLM_MODEL
+    try {
+      const stored = localStorage.getItem("app_settings")
+      if (stored) {
+        const parsed = JSON.parse(stored) as { llm?: { defaultModel?: string } }
+        const model = parsed?.llm?.defaultModel
+        if (typeof model === "string" && model.trim()) return model.trim()
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_LLM_MODEL
+  })
   const [websiteCount, setWebsiteCount] = useState("10")
   const [youtubeCount, setYoutubeCount] = useState("10")
   const [customPromptTab, setCustomPromptTab] = useState<"A" | "B" | "C">("A")
   const [customPromptA, setCustomPromptA] = useState("")
   const [customPromptB, setCustomPromptB] = useState("")
   const [customPromptC, setCustomPromptC] = useState("")
+  const [webUrls, setWebUrls] = useState("")
   const [returnsFile, setReturnsFile] = useState<FileUpload | null>(null)
   const [audienceFile, setAudienceFile] = useState<FileUpload | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const handleFileUpload = useCallback((type: "returns" | "audience", event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -68,6 +91,7 @@ export default function NewReportPage() {
 
   const handleSubmit = async () => {
     if (!canSubmit) return
+    setSubmitError(null)
     setIsGenerating(true)
     setProgress(0)
     setLogs([])
@@ -78,28 +102,47 @@ export default function NewReportPage() {
     }
 
     addLog("开始生成报告...")
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    const reportLanguageMap: Record<string, string> = {
+      zh: "中文", en: "英文", ja: "日语", de: "德语", fr: "法语", it: "意大利语", es: "西班牙语",
+    }
+    const reportLanguage = reportLanguageMap[language] || "英文"
+
+    const payload = {
+      title,
+      coreAsins,
+      competitorAsins,
+      marketplace,
+      language,
+      reportLanguage,
+      model: llmModel,
+      modelLabel: LLM_MODEL_OPTIONS.find((o) => o.value === llmModel)?.label ?? llmModel,
+      websiteCount,
+      youtubeCount,
+      customPrompt: currentPrompt,
+      webUrls: webUrls.trim() ? webUrls.trim().split(/\n+/).map((u) => u.trim()).filter((u) => u.startsWith("http")).slice(0, 20) : undefined,
+    }
 
     try {
+      const formData = new FormData()
+      formData.append("payload", JSON.stringify(payload))
+      if (returnsFile?.file) formData.append("returnsFile", returnsFile.file)
+      if (audienceFile?.file) formData.append("audienceFile", audienceFile.file)
+
       const response = await fetch("/api/reports/generate", {
         method: "POST",
-        headers: buildClientApiHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          title,
-          coreAsins,
-          competitorAsins,
-          marketplace,
-          language,
-          model: llmModel,
-          websiteCount,
-          youtubeCount,
-          customPrompt: currentPrompt,
-          agents: typeof window !== "undefined" ? JSON.parse(localStorage.getItem("app_settings") || "{}")?.agents : undefined
-        }),
+        signal: controller.signal,
+        headers: buildClientApiHeaders(),
+        body: formData,
       })
 
       if (!response.ok) {
-        const apiError = await buildClientApiError(response, `API 错误: ${response.status}`)
-        addLog(formatClientErrorMessage(apiError, `API 错误: ${response.status}`), true)
+        const apiError = await buildClientApiError(response, `提交失败(${response.status})，请检查必填项`)
+        const errMsg = formatClientErrorMessage(apiError, `API 错误: ${response.status}`)
+        addLog(errMsg, true)
+        setSubmitError(errMsg)
         setIsGenerating(false)
         return
       }
@@ -136,7 +179,7 @@ export default function NewReportPage() {
               if (data.chapters) {
                 setDynamicChapters(data.chapters)
               }
-              addLog(`报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
+              addLog(data.totalChapters === 1 ? `报告 ID: ${data.reportId}，正在生成…` : `报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
               break
             case "progress":
               setProgress(data.overallProgress)
@@ -149,11 +192,19 @@ export default function NewReportPage() {
               didComplete = true
               setProgress(100)
               setCompletionData({ chapters: data.chapters, elapsed: data.elapsed })
-              addLog(`✅ 报告生成完成! 共 ${data.chapters} 章，耗时 ${data.elapsed} 秒`)
+              addLog(`✅ 报告生成完成! 耗时 ${data.elapsed} 秒`)
               setTimeout(() => {
+                abortControllerRef.current = null
                 setIsGenerating(false)
                 setIsComplete(true)
               }, 1000)
+              break
+            case "error":
+              addLog(data.message ?? "生成出错", true)
+              if (data.message === "已取消") {
+                abortControllerRef.current = null
+                setIsGenerating(false)
+              }
               break
           }
         } catch {
@@ -184,11 +235,21 @@ export default function NewReportPage() {
         addLog("⚠️ 连接已结束，但未收到完成信号。请检查后端日志后重试。", true)
         setIsGenerating(false)
       }
+      abortControllerRef.current = null
     } catch (error) {
-      const message = formatClientErrorMessage(error, "网络错误: Unknown")
-      addLog(`网络错误: ${message}`, true)
+      if (error instanceof Error && error.name === "AbortError") {
+        addLog("已取消生成", true)
+      } else {
+        const message = formatClientErrorMessage(error, "网络错误: Unknown")
+        addLog(`网络错误: ${message}`, true)
+      }
+      abortControllerRef.current = null
       setIsGenerating(false)
     }
+  }
+
+  const handleCancelGenerate = () => {
+    abortControllerRef.current?.abort()
   }
 
   const currentPrompt = customPromptTab === "A" ? customPromptA : customPromptTab === "B" ? customPromptB : customPromptC
@@ -248,55 +309,41 @@ export default function NewReportPage() {
 
   // ─── Generating state ───
   if (isGenerating) {
-    const chapters = dynamicChapters.length > 0
-      ? dynamicChapters.map(c => c.title)
-      : ["市场与客群洞察", "竞品分析与我方策略", "退货报告分析", "Listing全面优化方案", "产品及周边优化建议", "关联场景词/产品拓展", "报告总结"]
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
         <main className="container mx-auto px-6 py-24">
           <Card className="p-8 bg-card border-border">
-            <h2 className="text-3xl font-bold mb-6 text-center">正在生成报告...</h2>
-            <div className="mb-12">
+            <div className="flex items-center justify-between gap-4 mb-8">
+              <h2 className="text-3xl font-bold text-center flex-1">正在生成报告...</h2>
+              <Button variant="outline" size="sm" onClick={handleCancelGenerate} className="shrink-0 gap-2 text-red-600 border-red-200 hover:bg-red-50">
+                <i className="fas fa-stop" aria-hidden />
+                取消生成
+              </Button>
+            </div>
+            <div className="mb-8">
               <div className="flex justify-between items-center mb-3">
                 <span className="text-lg font-semibold">总体进度</span>
-                <span className="metric-large text-4xl">{Math.round(progress)}%</span>
+                <span className="text-4xl font-bold text-primary tabular-nums">{Math.round(progress)}%</span>
               </div>
-              <div className="w-full bg-secondary rounded-full h-4">
-                <div className="bg-primary h-4 rounded-full transition-all duration-500 relative overflow-hidden" style={{ width: `${progress}%` }}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+              <div className="w-full bg-secondary rounded-full h-5 overflow-hidden">
+                <div className="bg-primary h-5 rounded-full transition-all duration-700 ease-out relative overflow-hidden" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent animate-pulse" />
                 </div>
               </div>
             </div>
             <div>
-              <h3 className="text-xl font-semibold mb-4">Agent 状态</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {chapters.map((chapter, index) => {
-                  const status = chapterStatuses[index] || "pending"
-                  return (
-                    <Card key={index} className={`p-4 border-2 transition-all ${status === "completed" ? "border-primary bg-primary/10" : status === "processing" ? "border-chart-2 bg-chart-2/10" : "border-border bg-card"}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold">{chapter}</span>
-                        {status === "completed" && <i className="fas fa-check text-primary"></i>}
-                        {status === "processing" && <i className="fas fa-spinner fa-spin text-chart-2"></i>}
-                        {status === "pending" && <i className="fas fa-clock text-muted-foreground"></i>}
-                      </div>
-                      <div className="w-full bg-secondary rounded-full h-1.5">
-                        <div className={`h-1.5 rounded-full transition-all duration-500 ${status === "completed" ? "bg-primary" : "bg-chart-2"}`} style={{ width: `${status === "completed" ? 100 : status === "processing" ? 50 : 0}%` }} />
-                      </div>
-                    </Card>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="mt-8">
-              <h3 className="text-xl font-semibold mb-4">实时日志</h3>
-              <Card className="p-4 bg-secondary/30 border-border max-h-48 overflow-y-auto font-mono text-sm" id="log-container">
-                <div className="space-y-1 text-muted-foreground">
-                  {logs.length === 0 && <div>等待连接...</div>}
+              <h3 className="text-lg font-semibold mb-3">实时日志</h3>
+              <Card className="p-4 bg-slate-900/80 border border-slate-700 rounded-xl min-h-[320px] max-h-[420px] overflow-y-auto font-mono text-sm shadow-inner" id="log-container">
+                <div className="space-y-2 text-slate-300">
+                  {logs.length === 0 && <div className="text-slate-500">等待连接...</div>}
                   {logs.map((log, i) => (
-                    <div key={i} className={log.error ? "text-red-500" : log.message.startsWith("✅") ? "text-primary" : ""}>
-                      [{log.time}] {log.message}
+                    <div
+                      key={i}
+                      ref={i === logs.length - 1 ? logEndRef : undefined}
+                      className={`py-1.5 px-2 rounded ${log.error ? "text-red-400 bg-red-950/30" : log.message.startsWith("✅") ? "text-emerald-400 bg-emerald-950/20" : "text-slate-300"}`}
+                    >
+                      <span className="text-slate-500 select-none">[{log.time}]</span> {log.message}
                     </div>
                   ))}
                 </div>
@@ -322,6 +369,19 @@ export default function NewReportPage() {
           <p className="text-xl text-muted-foreground">输入ASIN一键生成深度竞品分析报告</p>
         </div>
 
+        {submitError && (
+          <div className="mb-6 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-red-600 dark:text-red-400 flex items-start gap-3">
+            <i className="fas fa-exclamation-circle mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium">提交失败</p>
+              <p className="text-sm mt-1">{submitError}</p>
+            </div>
+            <button type="button" onClick={() => setSubmitError(null)} className="text-red-600 hover:text-red-700 shrink-0" aria-label="关闭">
+              <i className="fas fa-times" />
+            </button>
+          </div>
+        )}
+
         <div className="space-y-8">
           {/* ── Section 1: ASIN 输入 ── */}
           <Card className="p-8 bg-card border-border">
@@ -336,15 +396,15 @@ export default function NewReportPage() {
                 <Label className="text-base mb-2 block">
                   核心产品 ASIN <span className="text-primary">*</span>
                 </Label>
-                <p className="text-sm text-muted-foreground mb-3">输入1-5个同产品（变体）的ASIN</p>
+                <p className="text-sm text-muted-foreground mb-3">输入1-5个同产品（变体）的ASIN，支持换行、逗号、斜杠分隔</p>
                 <Textarea
-                  placeholder={"输入核心产品ASIN（例如：B08CVS825S）\n每行一个..."}
+                  placeholder={"例如：B08CVS825S 或 B07/B0DP/B0CR（每行一个、逗号、斜杠均可）"}
                   value={coreAsins}
                   onChange={(e) => setCoreAsins(e.target.value)}
                   className="min-h-36 bg-secondary/50 font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground mt-2">
-                  已输入 {coreAsins.split("\n").filter(l => l.trim()).length} 个 ASIN
+                  已输入 {parseAsinListFromText(coreAsins).length} 个 ASIN
                 </p>
               </div>
 
@@ -352,15 +412,15 @@ export default function NewReportPage() {
                 <Label className="text-base mb-2 block">
                   竞品 ASIN <span className="text-primary">*</span>
                 </Label>
-                <p className="text-sm text-muted-foreground mb-3">输入竞品ASIN，推荐5-15个</p>
+                <p className="text-sm text-muted-foreground mb-3">输入竞品ASIN，推荐5-15个，支持换行、逗号、斜杠分隔</p>
                 <Textarea
-                  placeholder={"输入竞品ASIN（每行一个）\n推荐输入5-15个..."}
+                  placeholder={"例如：每行一个，或用 B0DJ/B0BM/B095 等形式输入"}
                   value={competitorAsins}
                   onChange={(e) => setCompetitorAsins(e.target.value)}
                   className="min-h-36 bg-secondary/50 font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground mt-2">
-                  已输入 {competitorAsins.split("\n").filter(l => l.trim()).length} 个 ASIN
+                  已输入 {parseAsinListFromText(competitorAsins).length} 个 ASIN
                 </p>
               </div>
             </div>
@@ -376,7 +436,7 @@ export default function NewReportPage() {
                 <SelectContent>
                   <SelectItem value="US">🇺🇸 美国 (US)</SelectItem>
                   <SelectItem value="CA">🇨🇦 加拿大 (CA)</SelectItem>
-                  <SelectItem value="GB">🇬🇧 英国 (GB)</SelectItem>
+                  <SelectItem value="UK">🇬🇧 英国 (UK)</SelectItem>
                   <SelectItem value="DE">🇩🇪 德国 (DE)</SelectItem>
                   <SelectItem value="FR">🇫🇷 法国 (FR)</SelectItem>
                   <SelectItem value="IT">🇮🇹 意大利 (IT)</SelectItem>
@@ -436,14 +496,14 @@ export default function NewReportPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="anthropic/claude-sonnet-4">Claude Sonnet 4</SelectItem>
-                      <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
-                      <SelectItem value="google/gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
-                      <SelectItem value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</SelectItem>
-                      <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
-                      <SelectItem value="openai/gpt-4-turbo">GPT-4 Turbo</SelectItem>
+                      {LLM_MODEL_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    长报告（6000 字以上）建议选用 Gemini、GPT-5.2、DeepSeek 等支持更长输出的模型，避免报告被截断。
+                  </p>
                 </div>
               </div>
 
@@ -479,6 +539,21 @@ export default function NewReportPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* 参考网页 URL（ScrapingBee 抓取，需后端配置 SCRAPINGBEE_API_KEY） */}
+              <div>
+                <Label htmlFor="web-urls" className="text-base mb-2 block">
+                  参考网页 URL <span className="text-xs text-muted-foreground font-normal">(可选，每行一个，最多 5 个)</span>
+                </Label>
+                <Textarea
+                  id="web-urls"
+                  placeholder={"https://example.com/article\nhttps://..."}
+                  value={webUrls}
+                  onChange={(e) => setWebUrls(e.target.value)}
+                  className="min-h-20 bg-secondary/50 font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground mt-1">配置 ScrapingBee 后，将抓取上述网页内容并注入报告分析。</p>
               </div>
 
               {/* File Uploads */}

@@ -3,8 +3,8 @@ import fs from "fs"
 import path from "path"
 import { enforceApiGuard } from "@/lib/server/api-guard"
 import { apiError, withApiAudit } from "@/lib/server/api-response"
-import { getReportFilePath, getReportMetaFilePath, parseReportIdFromFilename, writeFileAtomically } from "@/lib/server/report-storage"
-import { ReportMetadata, ReportDataFile } from "@/lib/report-metadata"
+import { getReportFilePath, getReportMetaFilePath, parseReportIdFromFilename } from "@/lib/server/report-storage"
+import { ReportMetadata } from "@/lib/report-metadata"
 
 // 扫描 content/reports/ 目录，提取报告元数据
 export async function GET(request: NextRequest) {
@@ -57,13 +57,16 @@ export async function GET(request: NextRequest) {
                         progress: 100,
                         createdAt: stat.birthtime.toISOString(),
                         updatedAt: stat.mtime.toISOString(),
-                        chapters: [], // 列表页不强制需要章节信息
+                        chapters: [],
                         summary: "暂无摘要",
                         fileSize: stat.size,
+                        archivedStatus: "active" as const,
+                        source: "uploaded" as const,
                     }
                 }
 
-                // 使用元数据返回，极快
+                // 使用元数据返回，极快（含存档状态、来源）；featured 与 uploaded 均视为精选报告
+                const source = (meta.source === "uploaded" || meta.source === "featured") ? "uploaded" : "system"
                 return {
                     id,
                     title: meta.title,
@@ -71,9 +74,12 @@ export async function GET(request: NextRequest) {
                     progress: 100,
                     createdAt: meta.createdAt,
                     updatedAt: meta.updatedAt,
-                    chapters: [], // 列表页默认不传完整章节，减少 Payload
+                    chapters: [],
                     summary: `${meta.marketplace} | ${meta.language} | ${meta.model}`,
                     fileSize: stat.size,
+                    archivedStatus: (meta.status === "archived" ? "archived" : "active") as const,
+                    archivedAt: meta.archivedAt,
+                    source,
                 }
             })
 

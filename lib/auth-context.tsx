@@ -20,9 +20,17 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Simulated user storage key
+/** 仅用于本地/演示的模拟认证，密码以哈希形式存储。生产环境请使用后端认证（如 NextAuth + 数据库）。 */
 const USERS_STORAGE_KEY = "report_system_users"
 const CURRENT_USER_KEY = "report_system_current_user"
+
+async function hashPassword(salt: string, password: string): Promise<string> {
+  const data = new TextEncoder().encode(`${salt}|${password}`)
+  const buf = await crypto.subtle.digest("SHA-256", data)
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
@@ -44,8 +52,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   })
   const [isLoading] = useState(false)
 
-  // Get all registered users from localStorage
-  const getUsers = (): Record<string, { password: string; user: User }> => {
+  type StoredUserRecord = { passwordHash: string; user: User }
+  type LegacyUserRecord = { password?: string; user: User }
+  const getUsers = (): Record<string, StoredUserRecord & LegacyUserRecord> => {
     try {
       const stored = localStorage.getItem(USERS_STORAGE_KEY)
       return stored ? JSON.parse(stored) : {}
@@ -54,23 +63,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Save users to localStorage
-  const saveUsers = (users: Record<string, { password: string; user: User }>) => {
+  const saveUsers = (users: Record<string, StoredUserRecord>) => {
     localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
   }
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 800))
 
     const users = getUsers()
-    const userRecord = users[email.toLowerCase()]
+    const emailLower = email.toLowerCase()
+    const userRecord = users[emailLower]
 
     if (!userRecord) {
       return { success: false, error: "用户不存在，请先注册" }
     }
 
-    if (userRecord.password !== password) {
+    let passwordValid: boolean
+    if ("passwordHash" in userRecord && userRecord.passwordHash) {
+      const inputHash = await hashPassword(emailLower, password)
+      passwordValid = userRecord.passwordHash === inputHash
+    } else if ("password" in userRecord && userRecord.password !== undefined) {
+      passwordValid = userRecord.password === password
+    } else {
+      passwordValid = false
+    }
+
+    if (!passwordValid) {
       return { success: false, error: "密码错误，请重试" }
     }
 
@@ -82,6 +100,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(loggedInUser)
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(loggedInUser))
 
+    // 旧数据迁移：若之前存的是明文，登录成功后改为哈希存储
+    if ("password" in userRecord && userRecord.password !== undefined) {
+      const passwordHash = await hashPassword(emailLower, password)
+      users[emailLower] = { passwordHash, user: userRecord.user }
+      saveUsers(users as Record<string, StoredUserRecord>)
+    }
+
     return { success: true }
   }
 
@@ -90,7 +115,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     name: string,
   ): Promise<{ success: boolean; error?: string }> => {
-    // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 800))
 
     const users = getUsers()
@@ -107,8 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       createdAt: new Date(),
     }
 
+    const passwordHash = await hashPassword(emailLower, password)
     users[emailLower] = {
-      password,
+      passwordHash,
       user: newUser,
     }
 

@@ -10,6 +10,9 @@ export type ReportDataFile = {
   mimeType?: string
 }
 
+/** 报告来源：system=本系统新建报告生成，uploaded=上传/导入的精选报告 */
+export type ReportSource = "system" | "uploaded"
+
 export type ReportMetadata = {
   reportId: string
   title: string
@@ -26,6 +29,20 @@ export type ReportMetadata = {
   dataFiles: ReportDataFile[]
   status?: "active" | "archived"  // 报告状态：active=活跃，archived=已存档
   archivedAt?: string              // 存档时间
+  /** 来源：本系统生成仅出现在「我的报告」，上传的仅出现在「精选报告」 */
+  source?: ReportSource
+  /** 生成时是否因达到模型输出上限而可能被截断；仅 system 报告有意义 */
+  possiblyTruncated?: boolean
+}
+
+/** 单条抓取来源（持久化供数据源展示与智能问答检索） */
+export type ReportSourceItem = {
+  source_type: "product_info" | "reviews" | "reference_site" | "reference_youtube" | "return_report" | "persona"
+  source_key: string
+  display_label: string
+  content: string
+  char_count: number
+  meta?: Record<string, unknown>
 }
 
 export function toLanguageLabel(languageCode: string): string {

@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { apiError } from "@/lib/server/api-response"
+import { getClientIp } from "@/lib/server/request-utils"
 
 type RateLimitBucket = {
   count: number
@@ -20,15 +21,6 @@ declare global {
 
 const rateLimitStore = globalThis.__apiRateLimitStore ?? new Map<string, RateLimitBucket>()
 globalThis.__apiRateLimitStore = rateLimitStore
-
-function getClientIp(request: NextRequest): string {
-  const forwardedFor = request.headers.get("x-forwarded-for")
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() || "unknown"
-  }
-
-  return request.headers.get("x-real-ip") ?? "unknown"
-}
 
 function getRequestToken(request: NextRequest): string | null {
   const apiToken = request.headers.get("x-api-token")

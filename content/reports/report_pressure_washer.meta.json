@@ -1,80 +1,78 @@
 {
-  "reportId": "report_1",
+  "reportId": "pressure_washer",
   "title": "AI竞品分析报告-电动高压清洗机-C4.5",
   "source": "featured",
   "coreAsins": [
-    "B0FMK94VY4"
+    "B01BKT63XM"
   ],
   "competitorAsins": [
-    "B0DR3JP2FZ",
-    "B0DFM4Z71X",
-    "B0D8J5796M",
-    "B0FH21L9CF",
-    "B0F99576CF"
+    "B0DPFYXT5R",
+    "B083B2M9NT",
+    "B0DZD1LBBT",
+    "B01N20PROC",
+    "B0FZB2MTKH"
   ],
   "marketplace": "US",
-  "language": "中文",
+  "language": "English",
   "model": "unknown",
   "websiteCount": 0,
   "youtubeCount": 0,
-  "createdAt": "2026-02-14",
-  "updatedAt": "2026-02-15T13:11:40.037Z",
+  "createdAt": "2026-02-17",
+  "updatedAt": "2026-02-17T01:31:36.235Z",
   "dataFiles": [
     {
       "id": "legacy-core-1",
       "category": "亚马逊数据",
-      "name": "Amazon Product Page (B0FMK94VY4)",
+      "name": "Amazon Product Page (B01BKT63XM)",
       "size": "N/A",
       "icon": "fa-shopping-cart text-slate-400",
-      "addedAt": "2026-02-14",
+      "addedAt": "2026-02-17",
       "source": "系统采集"
     },
     {
       "id": "legacy-competitor-1",
       "category": "竞品数据",
-      "name": "Competitor Analysis (B0DR3JP2FZ)",
+      "name": "Competitor Analysis (B0DPFYXT5R)",
       "size": "N/A",
       "icon": "fa-chart-line text-slate-400",
-      "addedAt": "2026-02-14",
+      "addedAt": "2026-02-17",
       "source": "系统采集"
     },
     {
       "id": "legacy-competitor-2",
       "category": "竞品数据",
-      "name": "Competitor Analysis (B0DFM4Z71X)",
+      "name": "Competitor Analysis (B083B2M9NT)",
       "size": "N/A",
       "icon": "fa-chart-line text-slate-400",
-      "addedAt": "2026-02-14",
+      "addedAt": "2026-02-17",
       "source": "系统采集"
     },
     {
       "id": "legacy-competitor-3",
       "category": "竞品数据",
-      "name": "Competitor Analysis (B0D8J5796M)",
+      "name": "Competitor Analysis (B0DZD1LBBT)",
       "size": "N/A",
       "icon": "fa-chart-line text-slate-400",
-      "addedAt": "2026-02-14",
+      "addedAt": "2026-02-17",
       "source": "系统采集"
     },
     {
       "id": "legacy-competitor-4",
       "category": "竞品数据",
-      "name": "Competitor Analysis (B0FH21L9CF)",
+      "name": "Competitor Analysis (B01N20PROC)",
       "size": "N/A",
       "icon": "fa-chart-line text-slate-400",
-      "addedAt": "2026-02-14",
+      "addedAt": "2026-02-17",
       "source": "系统采集"
     },
     {
       "id": "legacy-competitor-5",
       "category": "竞品数据",
-      "name": "Competitor Analysis (B0F99576CF)",
+      "name": "Competitor Analysis (B0FZB2MTKH)",
       "size": "N/A",
       "icon": "fa-chart-line text-slate-400",
-      "addedAt": "2026-02-14",
+      "addedAt": "2026-02-17",
       "source": "系统采集"
     }
-  ],
-  "status": "archived",
-  "archivedAt": "2026-02-15T13:11:40.037Z"
+  ]
 }

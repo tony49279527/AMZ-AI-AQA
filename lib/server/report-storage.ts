@@ -33,6 +33,11 @@ export function getReportMetaFilePath(reportId: string): string {
   return path.join(getReportsDir(), `report_${reportId}.meta.json`)
 }
 
+/** 报告抓取来源存储（供数据源 Tab 展示与智能问答检索） */
+export function getReportSourcesFilePath(reportId: string): string {
+  return path.join(getReportsDir(), `report_${reportId}.sources.json`)
+}
+
 export function getReportUploadsDir(reportId: string): string {
   return path.join(getReportsDir(), "uploads", reportId)
 }

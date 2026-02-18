@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
+import { DEFAULT_LLM_MODEL, LLM_MODEL_OPTIONS, REPORT_CHAPTER_LABELS } from "@/lib/constants"
 
 type AgentPriority = "high" | "medium" | "low"
 
@@ -47,23 +48,20 @@ type AppSettings = {
 
 const defaultSettings: AppSettings = {
   llm: {
-    defaultModel: "google/gemini-2.0-flash-001",
+    defaultModel: DEFAULT_LLM_MODEL,
     temperature: 0.7,
     maxTokens: 4096,
     apiKey: "sk-*********************",
   },
+  // 与报告生成接口 CHAPTERS 的 id 一致，用于控制生成哪些章节
   agents: {
-    marketAnalysis: { enabled: true, priority: "high", timeout: 300 },
-    competitorAnalysis: { enabled: true, priority: "high", timeout: 300 },
-    productFeatures: { enabled: true, priority: "medium", timeout: 240 },
-    pricingStrategy: { enabled: true, priority: "medium", timeout: 240 },
-    customerInsights: { enabled: true, priority: "medium", timeout: 240 },
-    swotAnalysis: { enabled: true, priority: "low", timeout: 180 },
-    growthOpportunities: { enabled: true, priority: "low", timeout: 180 },
-    riskAssessment: { enabled: true, priority: "low", timeout: 180 },
-    recommendations: { enabled: true, priority: "high", timeout: 300 },
-    executiveSummary: { enabled: true, priority: "high", timeout: 300 },
-    dataSynthesis: { enabled: true, priority: "medium", timeout: 240 },
+    market: { enabled: true, priority: "high", timeout: 300 },
+    competitor: { enabled: true, priority: "high", timeout: 300 },
+    returns: { enabled: true, priority: "medium", timeout: 240 },
+    listing: { enabled: true, priority: "high", timeout: 300 },
+    product: { enabled: true, priority: "medium", timeout: 240 },
+    keywords: { enabled: true, priority: "medium", timeout: 240 },
+    summary: { enabled: true, priority: "high", timeout: 300 },
   },
   dataSources: {
     youtubeApiKey: "AIza*********************",
@@ -84,11 +82,20 @@ const defaultSettings: AppSettings = {
 }
 
 function mergeSettings(partial: Partial<AppSettings>): AppSettings {
+  const defaultAgentKeys = Object.keys(defaultSettings.agents) as (keyof typeof defaultSettings.agents)[]
+  const mergedAgents = { ...defaultSettings.agents }
+  if (partial.agents && typeof partial.agents === "object") {
+    for (const key of defaultAgentKeys) {
+      if (key in partial.agents && partial.agents[key]) {
+        mergedAgents[key] = { ...defaultSettings.agents[key], ...partial.agents[key] }
+      }
+    }
+  }
   return {
     ...defaultSettings,
     ...partial,
     llm: { ...defaultSettings.llm, ...partial.llm },
-    agents: { ...defaultSettings.agents, ...partial.agents },
+    agents: mergedAgents,
     dataSources: { ...defaultSettings.dataSources, ...partial.dataSources },
     notifications: { ...defaultSettings.notifications, ...partial.notifications },
     appearance: { ...defaultSettings.appearance, ...partial.appearance },
@@ -115,10 +122,16 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
-    // 持久化到 localStorage
     localStorage.setItem("app_settings", JSON.stringify(settings))
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
+  }
+
+  const handleReset = () => {
+    setSettings(defaultSettings)
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("app_settings")
+    }
   }
 
   return (
@@ -132,6 +145,9 @@ export default function SettingsPage() {
             <span className="text-primary">设置</span>
           </h1>
           <p className="text-xl text-muted-foreground">System Settings & Configuration</p>
+          <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+            <strong>说明：</strong>本页设置仅部分影响后端。报告生成与问答使用的 API Key 来自服务端环境变量（OPENROUTER_API_KEY），请勿在此填写真实密钥。Agent 开关会控制新建报告时生成哪些章节；LLM 默认模型会用于新建报告与智能问答。
+          </div>
         </div>
 
         <Tabs defaultValue="llm" className="w-full">
@@ -193,12 +209,11 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="google/gemini-2.0-flash-001">Gemini 2.0 Flash (免费)</SelectItem>
-                      <SelectItem value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro Preview</SelectItem>
-                      <SelectItem value="anthropic/claude-sonnet-4">Claude Sonnet 4</SelectItem>
-                      <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
-                      <SelectItem value="openai/gpt-4.1-mini">GPT-4.1 Mini</SelectItem>
-                      <SelectItem value="deepseek/deepseek-chat-v3-0324">DeepSeek V3</SelectItem>
+                      {LLM_MODEL_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <p className="text-sm text-muted-foreground mt-2">选择用于报告生成和问答的LLM模型（通过 OpenRouter 路由）</p>
@@ -281,12 +296,7 @@ export default function SettingsPage() {
                         />
                         <div>
                           <div className="font-semibold text-base">
-                            {key
-                              .replace(/([A-Z])/g, " $1")
-                              .trim()
-                              .split(" ")
-                              .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                              .join(" ")}
+                            {REPORT_CHAPTER_LABELS[key] ?? key}
                           </div>
                           <div className="text-sm text-muted-foreground">
                             {config.enabled ? "已启用" : "已禁用"} · 超时: {config.timeout}s
@@ -570,11 +580,11 @@ export default function SettingsPage() {
 
         {/* Save Button */}
         <div className="mt-8 flex justify-end gap-4">
-          <Button variant="outline" className="gap-2 bg-transparent">
-            <i className="fas fa-rotate-left"></i>
+          <Button variant="outline" className="gap-2 bg-transparent" onClick={handleReset} aria-label="重置为默认设置">
+            <i className="fas fa-rotate-left" aria-hidden></i>
             重置为默认
           </Button>
-          <Button onClick={handleSave} size="lg" className="gap-2 px-8">
+          <Button onClick={handleSave} size="lg" className="gap-2 px-8" aria-label={saved ? "已保存" : "保存设置"}>
             {saved ? (
               <>
                 <i className="fas fa-check"></i>

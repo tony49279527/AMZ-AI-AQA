@@ -1,3 +1,6 @@
+/** 报告来源：system=本系统新建报告生成，uploaded=上传/导入的精选 */
+export type ReportSource = "system" | "uploaded"
+
 export interface Report {
   id: string
   title: string
@@ -9,6 +12,8 @@ export interface Report {
   mainProductFile?: string
   competitorFile?: string
   archivedStatus?: "active" | "archived"  // 报告存档状态
+  /** 来源：仅「我的报告」显示 system，仅「精选报告」显示 uploaded */
+  source?: ReportSource
 }
 
 export interface Chapter {

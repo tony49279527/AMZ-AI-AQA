@@ -5,9 +5,17 @@ import {
     allocateReportId,
     ensureReportsDir,
     getReportMetaFilePath,
+    getReportSourcesFilePath,
     writeFileAtomically,
 } from "@/lib/server/report-storage"
-import { ReportDataFile, ReportMetadata, toLanguageLabel } from "@/lib/report-metadata"
+import { ALLOWED_MARKETPLACES, getReportMaxTokens } from "@/lib/constants"
+import {
+    fetchAmazonDataFromRapidAPI,
+    fetchCombinedReviewsFromRapidAPI,
+    fetchReferenceWebContentByKeywordExtended,
+    fetchReferenceYouTubeTranscriptByKeywordExtended,
+} from "@/lib/server/data-sources"
+import { ReportDataFile, ReportMetadata, ReportSourceItem, toLanguageLabel } from "@/lib/report-metadata"
 
 // 带重试的 fetch（指数退避 + 超时控制）
 async function fetchWithRetry(
@@ -47,28 +55,44 @@ async function fetchWithRetry(
     throw new Error("fetchWithRetry: exhausted all retries")
 }
 
-const CHAPTERS = [
-    { id: "market", title: "一、市场与客群洞察", prompt: "分析该产品的目标市场、核心客群画像、用户痛点、以及使用场景。包括市场规模趋势和用户搜索行为分析。" },
-    { id: "competitor", title: "二、竞品分析与我方策略", prompt: "对比我方产品与竞品的优劣势，分析竞品的定价策略、评分、review数量、市场份额。给出我方差异化策略建议。" },
-    { id: "returns", title: "三、退货报告分析", prompt: "基于产品分析常见的退货原因、差评要点、以及用户抱怨集中的问题。给出降低退货率的策略。" },
-    { id: "listing", title: "四、Listing全面优化方案", prompt: "为产品的亚马逊Listing提供优化建议，包括标题优化、五点描述、A+内容、关键词策略、图片建议等。" },
-    { id: "product", title: "五、产品及周边优化建议", prompt: "从产品本身的设计、功能、包装、配件等方面提出改进建议。分析可拓展的周边产品和捆绑销售机会。" },
-    { id: "keywords", title: "六、关联场景词/产品拓展", prompt: "挖掘与产品相关的长尾关键词、场景词、关联搜索词。分析拓展新品类或新场景的机会。" },
-    { id: "summary", title: "报告总结", prompt: "用结构化方式总结所有章节的关键发现和行动建议。重点突出最具商业价值的3-5个建议。" },
-]
+/** 上传文件解析为纯文本（TXT/CSV），失败或空则返回占位符 */
+async function parseUploadedFileToText(file: File | null, noPlaceholder: string): Promise<string> {
+    if (!file || file.size === 0) return noPlaceholder
+    const buf = await file.arrayBuffer()
+    let raw: string
+    try {
+        raw = new TextDecoder("utf-8").decode(buf)
+    } catch {
+        return noPlaceholder
+    }
+    const trimmed = raw.trim()
+    if (!trimmed) return noPlaceholder
+    const name = (file.name || "").toLowerCase()
+    if (name.endsWith(".csv")) {
+        const lines = trimmed.split(/\r?\n/).filter((l) => l.trim())
+        const text = lines
+            .map((line) => {
+                const cells = line.split(",").map((c) => c.trim().replace(/^["']|["']$/g, ""))
+                return cells.join(" ")
+            })
+            .join("\n")
+        return text || noPlaceholder
+    }
+    return trimmed
+}
+
+const SYSTEM_PROMPT = `你是一位顶级的市场分析专家，尤其擅长亚马逊等电商平台的深度竞品分析。你的任务是基于提供的多维度信息（产品信息、用户评论、参考网站内容、YouTube 视频内容），为主产品撰写一份全面、深入、结构清晰且数据驱动的竞品分析报告。
+
+请严格遵循用户提供的报告框架。报告必须使用要求的语言撰写，语言专业流畅，论点需有数据支撑（引用评论关键词、网站内容要点等）。使用带结构、排版清晰的、改用表格用表格，该用外语（英语、德语、日语、法语、意大利语等）用外语（英语、德语、日语、法语、意大利语等），该用中文用中文的报告，确保最终输出是一份完整、连贯，排版美观，结构清晰，合理使用表格的竞品分析报告文档。`
 
 const MAX_TITLE_LENGTH = 200
 const MAX_CUSTOM_PROMPT_LENGTH = 4000
-const MAX_ASIN_COUNT = 20
+const MAX_ASIN_COUNT = 50
 const MAX_REFERENCE_COUNT = 50
 const ASIN_REGEX = /^[A-Z0-9]{10}$/
 const LANGUAGE_CODE_REGEX = /^[a-z]{2}(?:-[A-Z]{2})?$/
 
-const ALLOWED_MARKETPLACES = new Set([
-    "US", "CA", "MX", "BR",
-    "UK", "DE", "FR", "IT", "ES", "NL", "SE", "PL", "TR",
-    "JP", "AU", "SG", "IN", "SA", "AE",
-])
+const ALLOWED_MARKETPLACES_SET = new Set<string>(ALLOWED_MARKETPLACES)
 
 function normalizeModel(model: unknown): string | null {
     if (typeof model !== "string") return null
@@ -91,26 +115,25 @@ function normalizeTrimmedString(input: unknown, maxLength: number): string | nul
     return trimmed
 }
 
+/** 从一段文本里抽出合法 10 位 ASIN（去掉空格、逗号等后只保留字母数字，再筛出正好 10 位的） */
 function parseAsinList(input: unknown): string[] | null {
     if (typeof input !== "string") return null
 
-    const unique = Array.from(new Set(
-        input
-            .split(/[\n,，;\t ]+/)
-            .map((item) => item.trim())
-            .filter(Boolean)
-            .map((item) => item.toUpperCase())
-    ))
+    const tokens = input
+        .split(/[\n,，;\t \/]+/)
+        .map((item) => item.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""))
+        .filter((s) => s.length === 10)
 
+    const unique = Array.from(new Set(tokens))
     if (unique.length === 0 || unique.length > MAX_ASIN_COUNT) return null
-    if (!unique.every((asin) => ASIN_REGEX.test(asin))) return null
     return unique
 }
 
 function normalizeMarketplace(input: unknown): string | null {
     if (typeof input !== "string") return null
-    const normalized = input.trim().toUpperCase()
-    if (!ALLOWED_MARKETPLACES.has(normalized)) return null
+    let normalized = input.trim().toUpperCase()
+    if (normalized === "GB") normalized = "UK"
+    if (!ALLOWED_MARKETPLACES_SET.has(normalized)) return null
     return normalized
 }
 
@@ -126,6 +149,91 @@ function normalizeCustomPrompt(input: unknown): string | undefined {
     const trimmed = input.trim()
     if (!trimmed) return undefined
     return trimmed.slice(0, MAX_CUSTOM_PROMPT_LENGTH)
+}
+
+function normalizeReportLanguage(input: unknown): string {
+    if (typeof input !== "string") return "英文"
+    const t = input.trim()
+    return t || "英文"
+}
+
+function buildUserPrompt(params: {
+    reportLanguage: string
+    mainAsins: string
+    competitorAsins: string
+    productsInfoText: string
+    combinedReviews: string
+    combinedWebContent: string
+    combinedTranscript: string
+    returnReportText: string
+    personaReportText: string
+    customPrompt: string
+}): string {
+    const t = `请基于以下提供的【混合数据源】，并根据指定的【主产品 ASIN】和【竞品 ASIN 列表】，撰写一份详细的竞品分析报告。报告需要严格按照指定的框架进行，并且总字数不少于 5000 个中文或者要求的其他语言。
+
+**重要指令 - 如何处理混合数据:**
+
+报告语言要求是中文和 ${params.reportLanguage}
+
+1. **识别主/竞品**:
+    * **主产品 ASIN**: ${params.mainAsins} （请以此 ASIN 为核心进行分析）
+    * **竞品 ASIN 列表**: ${params.competitorAsins} （请将这些 ASIN 作为对比对象）
+
+2. **数据源说明**:
+    * **Products Info**: 这是一个混合文本，包含了主产品和所有竞品的产品信息（标题、规格、描述等）。你需要从中提取并区分属于主产品和各个竞品的信息。
+    * **Products Reviews**: 这是一个混合文本，包含了主产品和所有竞品的评论。你需要从中提取并区分针对主产品和各个竞品的评论要点。
+    * **Reference Sites**: 这是关于通用产品类别的参考网站内容，可能不直接区分 ASIN，用于提供市场背景、技术信息和用户场景。
+    * **Reference YouTube**: 这是关于通用产品类别的 YouTube 字幕内容，可能不直接区分 ASIN，用于提供视觉演示、使用方法和用户反馈。
+    * **Retours（亚马逊退货报告）**:
+      \`\`\`
+      ${params.returnReportText}
+      \`\`\`
+      - 如果上面的内容为 "NO_RETURN_REPORT"，表示本次没有提供退货报告，你需要忽略退货报告相关分析，不要因此报错或反复追问。
+    * **Persona（亚马逊人群报告）**:
+      \`\`\`
+      ${params.personaReportText}
+      \`\`\`
+      - 如果上面的内容为 "NO_PERSONA_REPORT"，表示本次没有提供人群报告，你需要忽略人群画像相关分析，不要因此报错或反复追问。
+
+3. **分析逻辑**:
+    在报告中，必须明确指出哪些信息 / 评论 / 优缺点是针对主产品的，哪些是针对具体某个竞品的。请尽力从混合文本中进行推断和分离；如果信息难以明确归属，请谨慎说明。
+
+**报告框架:**
+
+${params.customPrompt}
+
+**输入数据:**
+
+* **主产品 ASIN**: \`${params.mainAsins}\`
+* **竞品 ASINs**: \`${params.competitorAsins}\`
+
+* **产品信息 (\`Products Info\` - 混合)**:
+    \`\`\`
+${params.productsInfoText}
+    \`\`\`
+* **产品评论 (\`Products Reviews\` - 混合)**:
+    \`\`\`
+${params.combinedReviews}
+    \`\`\`
+* **参考网站内容 (\`Reference Sites\` - 通用)**:
+    \`\`\`
+${params.combinedWebContent}
+    \`\`\`
+* **参考 YouTube 字幕 (\`Reference YouTube\` - 通用)**:
+    \`\`\`
+${params.combinedTranscript}
+    \`\`\`
+* **亚马逊的人群画像描述 (\`Persona\` - 通用，占位符已处理)**:
+    \`\`\`
+${params.personaReportText}
+    \`\`\`
+
+**再次强调:**
+* 如果退货报告或人群报告的内容为占位字符串（如 "NO_RETURN_REPORT" 或 "NO_PERSONA_REPORT"），请视为该数据源不存在，正常完成其它部分分析，不要报错或反复追问。
+* 报告必须深入、详细，总字数不少于 6000 汉字。
+* 核心挑战在于从混合的 \`Products Info\` 和 \`Products Reviews\` 文本中准确分离出属于主产品和各竞品的信息。请尽力完成此任务，并在报告中清晰标注信息来源（主品 / 各竞品 ASIN），输出排版美观、结构清晰，并合理使用表格的竞品分析报告。
+* 报告语言要求是中文和 ${params.reportLanguage}`
+    return t
 }
 
 function buildSystemCollectedDataFiles(
@@ -190,31 +298,61 @@ export async function POST(request: NextRequest) {
         if (guardError) return guardError
 
         try {
-            const body = (await request.json()) as Record<string, unknown>
+            const contentType = request.headers.get("content-type") || ""
+            let body: Record<string, unknown>
+            let returnsFile: File | null = null
+            let audienceFile: File | null = null
+
+            if (contentType.includes("multipart/form-data")) {
+                const formData = await request.formData()
+                const payloadRaw = formData.get("payload")
+                if (typeof payloadRaw !== "string" || !payloadRaw.trim()) {
+                    return apiError("未收到表单数据（payload 为空），请刷新页面后重试", { status: 400, code: "MISSING_PAYLOAD", requestId })
+                }
+                try {
+                    body = JSON.parse(payloadRaw) as Record<string, unknown>
+                } catch {
+                    return apiError("表单数据格式错误，请刷新页面后重试", { status: 400, code: "INVALID_PAYLOAD", requestId })
+                }
+                const rf = formData.get("returnsFile")
+                const af = formData.get("audienceFile")
+                if (rf instanceof File) returnsFile = rf
+                if (af instanceof File) audienceFile = af
+            } else {
+                body = (await request.json()) as Record<string, unknown>
+            }
+
             const title = normalizeTrimmedString(body.title, MAX_TITLE_LENGTH)
             const coreAsinList = parseAsinList(body.coreAsins)
             const competitorAsinList = parseAsinList(body.competitorAsins)
             const marketplace = normalizeMarketplace(body.marketplace)
             const language = normalizeLanguageCode(body.language)
-            const customPrompt = normalizeCustomPrompt(body.customPrompt)
+            const reportLanguage = normalizeReportLanguage(body.reportLanguage)
+            const customPrompt = normalizeCustomPrompt(body.customPrompt) || "请按常规竞品分析结构撰写：市场与客群、竞品对比、退货与差评分析、Listing 优化、产品建议、关键词与拓展、总结。"
             const requestModel = body.model
             const websiteCount = normalizePositiveInt(body.websiteCount, 10, 1, MAX_REFERENCE_COUNT)
             const youtubeCount = normalizePositiveInt(body.youtubeCount, 10, 1, MAX_REFERENCE_COUNT)
 
-            if (!title || !coreAsinList || !competitorAsinList || !marketplace) {
-                return apiError("Missing required fields", { status: 400, code: "MISSING_REQUIRED_FIELDS", requestId })
+            const missing: string[] = []
+            if (!title) missing.push("报告标题")
+            if (!coreAsinList) missing.push("主品 ASIN")
+            if (!competitorAsinList) missing.push("竞品 ASIN")
+            if (!marketplace) missing.push("站点")
+            if (missing.length > 0) {
+                return apiError("请填写必填项：" + missing.join("、"), { status: 400, code: "MISSING_REQUIRED_FIELDS", requestId, details: { missing } })
             }
             const coreAsins = coreAsinList.join(", ")
             const competitorAsins = competitorAsinList.join(", ")
 
             const apiKey = process.env.OPENROUTER_API_KEY
             const baseUrl = process.env.LLM_BASE_URL || "https://openrouter.ai/api/v1"
-            const model = normalizeModel(requestModel) || process.env.LLM_MODEL || "google/gemini-2.0-flash-001"
+            const model = normalizeModel(requestModel) || process.env.LLM_MODEL || "anthropic/claude-sonnet-4.5"
 
             if (!apiKey) {
                 return apiError("未配置 API Key", { status: 500, code: "LLM_API_KEY_MISSING", requestId })
             }
 
+            const signal = request.signal
             const encoder = new TextEncoder()
             const stream = new ReadableStream({
                 async start(controller) {
@@ -226,118 +364,168 @@ export async function POST(request: NextRequest) {
                     const { reportId, filePath } = allocateReportId(reportsDir)
                     const metaFilePath = getReportMetaFilePath(reportId)
 
-                    // 根据传入的 agents 配置过滤章节
-                    const activeAgents = (body.agents as Record<string, { enabled: boolean }>) || {}
-                    const filteredChapters = CHAPTERS.filter(chapter => {
-                        // 如果传入了配置，则检查对应 ID 是否启用。默认启用。
-                        if (activeAgents[chapter.id] !== undefined) {
-                            return activeAgents[chapter.id].enabled
-                        }
-                        return true
-                    })
+                    send("init", { reportId, totalChapters: 1, chapters: [{ id: "report", title: "报告生成" }] })
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "processing", overallProgress: 5 })
+                    send("log", { message: "开始拉取数据并生成报告…" })
+                    send("log", { message: `主品: ${coreAsins} | 竞品: ${competitorAsins} | 站点: ${marketplace}` })
 
-                    if (filteredChapters.length === 0) {
-                        send("error", { message: "未选择任何有效的分析章节" })
+                    const startTime = Date.now()
+
+                    if (signal.aborted) {
+                        send("error", { message: "已取消" })
                         controller.close()
                         return
                     }
 
-                    send("init", {
-                        reportId,
-                        totalChapters: filteredChapters.length,
-                        chapters: filteredChapters.map(c => ({ id: c.id, title: c.title }))
-                    })
-                    send("log", { message: "初始化 LangGraph 工作流..." })
-                    send("log", { message: `正在分析 ASIN: ${coreAsins}` })
-                    send("log", { message: `竞品 ASIN: ${competitorAsins}` })
-                    send("log", { message: `参考源配置: 网站 ${websiteCount} 个 / YouTube ${youtubeCount} 个` })
-                    send("log", { message: `LLM 模型: ${model}` })
+                    const returnReportText = await parseUploadedFileToText(returnsFile, "NO_RETURN_REPORT")
+                    const personaReportText = await parseUploadedFileToText(audienceFile, "NO_PERSONA_REPORT")
+                    send("log", { message: "✅ 上传文件已解析（如有）" })
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "processing", overallProgress: 10 })
 
-                    const langSuffix = language === "zh" ? "用中文" : "in English"
-                    let fullReport = `# **${title}**\n\n`
-                    fullReport += `> 分析日期: ${new Date().toLocaleDateString("zh-CN")} | 市场: ${marketplace} | 核心ASIN: ${coreAsins}\n\n---\n\n`
+                    let productsInfoText = ""
+                    const allAsins = [...coreAsinList, ...competitorAsinList]
+                    if (allAsins.length > 0) {
+                        send("log", { message: "正在拉取产品信息…" })
+                        productsInfoText = await fetchAmazonDataFromRapidAPI(allAsins, marketplace, { maxProducts: 20 }) || "（暂无产品数据）"
+                        send("log", { message: "✅ 产品信息已就绪" })
+                    } else {
+                        productsInfoText = "（暂无产品数据）"
+                    }
 
-                    const startTime = Date.now()
+                    if (signal.aborted) {
+                        send("error", { message: "已取消" })
+                        controller.close()
+                        return
+                    }
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "processing", overallProgress: 25 })
 
-                    for (let i = 0; i < filteredChapters.length; i++) {
-                        const chapter = filteredChapters[i]
-                        const progress = Math.round(((i) / filteredChapters.length) * 100)
+                    let combinedReviews = ""
+                    if (allAsins.length > 0) {
+                        send("log", { message: "正在拉取评论…" })
+                        combinedReviews = await fetchCombinedReviewsFromRapidAPI(allAsins, marketplace, { maxPerAsin: 100 }) || "（暂无评论数据）"
+                        send("log", { message: "✅ 评论已就绪" })
+                    } else {
+                        combinedReviews = "（暂无评论数据）"
+                    }
 
-                        send("progress", {
-                            chapter: i,
-                            chapterTitle: chapter.title,
-                            status: "processing",
-                            overallProgress: progress
-                        })
-                        send("log", { message: `启动 Agent: ${chapter.title}...` })
+                    if (signal.aborted) {
+                        send("error", { message: "已取消" })
+                        controller.close()
+                        return
+                    }
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "processing", overallProgress: 45 })
 
-                        try {
-                            const chapterPrompt = `你是一位资深的亚马逊运营分析师。请${langSuffix}为以下产品撰写竞品分析报告中的一个章节。
-
-**产品信息:**
-- 核心 ASIN: ${coreAsins}
-- 竞品 ASIN: ${competitorAsins}
-- 市场站点: Amazon ${marketplace}
-- 报告标题: ${title}
-- 参考网站数量: ${websiteCount}
-- 参考 YouTube 数量: ${youtubeCount}
-
-**当前章节:** ${chapter.title}
-**章节要求:** ${chapter.prompt}
-
-${customPrompt ? `**用户额外要求:** ${customPrompt}` : ""}
-
-**输出要求:**
-1. 使用 Markdown 格式
-2. 包含具体的数据分析（可以基于合理推断）
-3. 每个要点用加粗标题 + 详细说明
-4. 在适当位置提供可执行的建议
-5. 字数控制在 400-800 字
-6. 不要重复章节标题，直接输出内容`
-
-                            const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
-                                method: "POST",
-                                headers: {
-                                    "Content-Type": "application/json",
-                                    "Authorization": `Bearer ${apiKey}`,
-                                    "HTTP-Referer": "http://localhost:3000",
-                                    "X-Title": "AI Report Generation System",
-                                },
-                                body: JSON.stringify({
-                                    model,
-                                    messages: [
-                                        { role: "system", content: "你是一个专业的亚马逊竞品分析师，擅长撰写详细、有洞察力的市场分析报告。" },
-                                        { role: "user", content: chapterPrompt },
-                                    ],
-                                    temperature: 0.7,
-                                    max_tokens: 2000,
-                                }),
+                    // 根据产品关键词自动搜索参考网站并抓取内容（不依赖用户填写的链接）
+                    let combinedWebContent = ""
+                    const webSourceItems: ReportSourceItem[] = []
+                    if (productsInfoText && websiteCount > 0) {
+                        send("log", { message: "正在根据产品关键词搜索参考网站…" })
+                        const webResult = await fetchReferenceWebContentByKeywordExtended(productsInfoText, websiteCount, { maxUrls: 15, maxPerUrl: 5000 })
+                        combinedWebContent = webResult.combined || ""
+                        for (const it of webResult.items) {
+                            webSourceItems.push({
+                                source_type: "reference_site",
+                                source_key: it.url,
+                                display_label: it.display_label,
+                                content: it.content,
+                                char_count: it.char_count,
                             })
-
-                            if (!response.ok) {
-                                await response.text()
-                                send("log", { message: `⚠️ 章节 ${chapter.title} 生成失败: ${response.status}`, error: true })
-                                fullReport += `## ${chapter.title}\n\n> ⚠️ 章节生成失败 (${response.status})\n\n`
-                            } else {
-                                const result = await response.json()
-                                const content = result.choices?.[0]?.message?.content || ""
-
-                                fullReport += `## ${chapter.title}\n\n${content}\n\n---\n\n`
-                                send("log", { message: `✅ ${chapter.title} 完成 (${content.length} 字)` })
-                            }
-                        } catch (err) {
-                            const errMsg = err instanceof Error ? err.message : "Unknown error"
-                            send("log", { message: `⚠️ ${chapter.title} 生成异常: ${errMsg}`, error: true })
-                            fullReport += `## ${chapter.title}\n\n> ⚠️ 生成异常\n\n`
                         }
+                        if (combinedWebContent) send("log", { message: "✅ 参考网页已就绪" })
+                    }
 
-                        const chapterProgress = Math.round(((i + 1) / filteredChapters.length) * 100)
-                        send("progress", {
-                            chapter: i,
-                            chapterTitle: chapter.title,
-                            status: "completed",
-                            overallProgress: chapterProgress
+                    // 根据产品关键词自动搜索 YouTube 视频并抓取字幕
+                    let combinedTranscript = ""
+                    const youtubeSourceItems: ReportSourceItem[] = []
+                    if (productsInfoText && youtubeCount > 0) {
+                        send("log", { message: "正在根据产品关键词搜索 YouTube 视频…" })
+                        const ytResult = await fetchReferenceYouTubeTranscriptByKeywordExtended(productsInfoText, youtubeCount)
+                        combinedTranscript = ytResult.combined || ""
+                        for (const it of ytResult.items) {
+                            youtubeSourceItems.push({
+                                source_type: "reference_youtube",
+                                source_key: it.url,
+                                display_label: it.title,
+                                content: it.content,
+                                char_count: it.char_count,
+                            })
+                        }
+                        if (combinedTranscript) send("log", { message: "✅ YouTube 字幕已就绪" })
+                    }
+
+                    const modelLabel = typeof body.modelLabel === "string" && body.modelLabel.trim() ? body.modelLabel.trim() : model
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "processing", overallProgress: 60 })
+                    send("log", { message: `正在生成报告（${modelLabel}）…` })
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "processing", overallProgress: 70 })
+
+                    const userPrompt = buildUserPrompt({
+                        reportLanguage,
+                        mainAsins: coreAsins,
+                        competitorAsins,
+                        productsInfoText,
+                        combinedReviews,
+                        combinedWebContent: combinedWebContent || "（本次未提供参考网站内容）",
+                        combinedTranscript: combinedTranscript || "（本次未提供 YouTube 字幕）",
+                        returnReportText,
+                        personaReportText,
+                        customPrompt,
+                    })
+
+                    let fullReport = ""
+                    let possiblyTruncated = false
+                    try {
+                        const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Authorization": `Bearer ${apiKey}`,
+                                "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+                                "X-Title": "AI Report Generation System",
+                            },
+                            body: JSON.stringify({
+                                model,
+                                messages: [
+                                    { role: "system", content: SYSTEM_PROMPT },
+                                    { role: "user", content: userPrompt },
+                                ],
+                                temperature: 0.7,
+                                max_tokens: getReportMaxTokens(model),
+                            }),
                         })
+                        if (signal.aborted) {
+                            send("error", { message: "已取消" })
+                            controller.close()
+                            return
+                        }
+                        if (!response.ok) {
+                            const errText = await response.text()
+                            send("log", { message: `生成报告时出错: ${response.status}`, error: true })
+                            send("error", { message: errText.slice(0, 200) })
+                            controller.close()
+                            return
+                        }
+                        const result = (await response.json()) as {
+                            choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+                        }
+                        const choice = result.choices?.[0]
+                        fullReport = choice?.message?.content?.trim() || ""
+                        const finishReason = choice?.finish_reason ?? ""
+                        possiblyTruncated = finishReason === "length"
+                        if (!fullReport) {
+                            send("log", { message: "模型未返回内容", error: true })
+                            send("error", { message: "模型未返回内容" })
+                            controller.close()
+                            return
+                        }
+                        if (possiblyTruncated) {
+                            send("log", { message: "⚠️ 报告可能因模型输出长度限制未完全生成，建议换用支持更长输出的模型重新生成", error: true })
+                        }
+                    } catch (err) {
+                        const errMsg = err instanceof Error ? err.message : "Unknown error"
+                        send("log", { message: `生成异常: ${errMsg}`, error: true })
+                        send("error", { message: errMsg })
+                        controller.close()
+                        return
                     }
 
                     writeFileAtomically(filePath, fullReport)
@@ -356,17 +544,57 @@ ${customPrompt ? `**用户额外要求:** ${customPrompt}` : ""}
                         createdAt: new Date().toISOString().split("T")[0],
                         updatedAt: new Date().toISOString(),
                         dataFiles: buildSystemCollectedDataFiles(coreAsinList, competitorAsinList, websiteCount, youtubeCount),
+                        source: "system",
+                        possiblyTruncated: possiblyTruncated || undefined,
                     }
                     writeFileAtomically(metaFilePath, JSON.stringify(metadata, null, 2))
 
+                    // 持久化抓取来源（供数据源 Tab 展示与智能问答检索）
+                    const sourceItems: ReportSourceItem[] = []
+                    if (productsInfoText && productsInfoText !== "（暂无产品数据）") {
+                        sourceItems.push({
+                            source_type: "product_info",
+                            source_key: "products",
+                            display_label: "产品信息（主品+竞品）",
+                            content: productsInfoText,
+                            char_count: productsInfoText.length,
+                        })
+                    }
+                    if (combinedReviews && combinedReviews !== "（暂无评论数据）") {
+                        sourceItems.push({
+                            source_type: "reviews",
+                            source_key: "reviews",
+                            display_label: "产品评论（主品+竞品）",
+                            content: combinedReviews,
+                            char_count: combinedReviews.length,
+                        })
+                    }
+                    sourceItems.push(...webSourceItems, ...youtubeSourceItems)
+                    if (returnReportText && returnReportText !== "NO_RETURN_REPORT") {
+                        sourceItems.push({
+                            source_type: "return_report",
+                            source_key: "file",
+                            display_label: "亚马逊退货报告",
+                            content: returnReportText,
+                            char_count: returnReportText.length,
+                        })
+                    }
+                    if (personaReportText && personaReportText !== "NO_PERSONA_REPORT") {
+                        sourceItems.push({
+                            source_type: "persona",
+                            source_key: "file",
+                            display_label: "店铺受众画像",
+                            content: personaReportText,
+                            char_count: personaReportText.length,
+                        })
+                    }
+                    const sourcesFilePath = getReportSourcesFilePath(reportId)
+                    writeFileAtomically(sourcesFilePath, JSON.stringify(sourceItems, null, 0))
+
                     const elapsed = Math.round((Date.now() - startTime) / 1000)
-                    send("log", { message: `报告已保存: report_${reportId}.md` })
-                    send("complete", {
-                        reportId,
-                        chapters: filteredChapters.length,
-                        elapsed,
-                        fileSize: fullReport.length,
-                    })
+                    send("log", { message: "报告已保存" })
+                    send("progress", { chapter: 0, chapterTitle: "报告生成", status: "completed", overallProgress: 100 })
+                    send("complete", { reportId, chapters: 1, elapsed, fileSize: fullReport.length })
 
                     controller.close()
                 },

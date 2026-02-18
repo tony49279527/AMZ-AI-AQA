@@ -77,7 +77,8 @@ export default function DashboardPage() {
             ...r,
             createdAt: new Date(r.createdAt as string),
             updatedAt: new Date(r.updatedAt as string),
-            archivedStatus: (r.status || "active") as ReportStatus,
+            archivedStatus: (r.archivedStatus ?? "active") as ReportStatus,
+            source: r.source === "uploaded" ? "uploaded" : "system",
           }))
         )
       } catch (error) {
@@ -121,14 +122,22 @@ export default function DashboardPage() {
     { id: "featured", label: "精选报告" },
   ]
 
+  // 精选报告 = 上传/导入的，仅出现在精选；我的报告 = 本系统生成的，仅出现在我的报告
+  const featuredReports = recentReports.filter(r => r.source === "uploaded" && r.archivedStatus !== "archived")
+  const myReports = recentReports.filter(r => r.source === "system" && r.archivedStatus !== "archived")
+
   const filteredReports =
     activeTab === "mine"
-      ? recentReports.filter(r => r.archivedStatus !== "archived")
+      ? myReports
       : activeTab === "featured"
-        ? recentReports.filter(r => r.archivedStatus !== "archived").slice(0, 4)
-        : recentReports.filter(r => r.archivedStatus !== "archived")
+        ? featuredReports
+        : recentReports
 
-  const sortedReports = [...filteredReports].sort((a, b) => {
+  // 精选报告：在「全部」页只展示前 4 条，点「查看全部精选」进 Tab 后展示全部
+  const sortedFeaturedReports = [...featuredReports].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  const displayedFeaturedReports = activeTab === "all" ? sortedFeaturedReports.slice(0, 4) : sortedFeaturedReports
+
+  const sortFn = (a: Report, b: Report) => {
     switch (sortBy) {
       case "recent":
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -141,7 +150,9 @@ export default function DashboardPage() {
       default:
         return 0
     }
-  })
+  }
+  const sortedReports = [...filteredReports].sort(sortFn)
+  const sortedMyReports = [...myReports].sort(sortFn)
 
   // 渲染统一的报告卡片
   const renderReportCard = (report: Report, showBadge: boolean = false) => {
@@ -216,6 +227,7 @@ export default function DashboardPage() {
             }}
             className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:border-red-300 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm"
             title={isArchived ? "恢复报告" : "存档报告"}
+            aria-label={isArchived ? "恢复报告" : "存档报告"}
           >
             <i className={cn(
               "text-xs transition-colors",
@@ -355,13 +367,20 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {viewMode === "grid" ? (
+              {displayedFeaturedReports.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
+                  <div className="w-14 h-14 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-3">
+                    <i className="fas fa-star text-2xl text-slate-300" />
+                  </div>
+                  <p className="text-sm text-slate-500">暂无精选报告</p>
+                </div>
+              ) : viewMode === "grid" ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {recentReports.slice(0, 4).map((report) => renderReportCard(report, true))}
+                  {displayedFeaturedReports.map((report) => renderReportCard(report, true))}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recentReports.slice(0, 4).map((report) => {
+                  {displayedFeaturedReports.map((report) => {
                     return (
                       <Link key={report.id} href={`/report/${report.id}`} className="block group">
                         <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
@@ -400,16 +419,16 @@ export default function DashboardPage() {
             </section>
           )}
 
-          {/* 我的报告 */}
+          {/* 我的报告 - 仅展示本系统生成的报告，与「精选报告」互斥 */}
           {!isLoading && activeTab !== "featured" && (
             <section>
               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 <span className="w-1 h-6 bg-slate-400 rounded-full inline-block"></span>
-                {activeTab === "mine" ? "我的报告" : "我的报告"}
-                <span className="ml-1 text-sm text-slate-400 font-normal bg-slate-100 px-2 py-0.5 rounded-full">{sortedReports.length}</span>
+                我的报告
+                <span className="ml-1 text-sm text-slate-400 font-normal bg-slate-100 px-2 py-0.5 rounded-full">{sortedMyReports.length}</span>
               </h2>
 
-              {sortedReports.length === 0 ? (
+              {sortedMyReports.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-24 text-center">
                   <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
                     <i className="fas fa-inbox text-3xl text-slate-300" />
@@ -454,7 +473,7 @@ export default function DashboardPage() {
                   </Link>
 
                   {/* 报告卡片 (Grid) */}
-                  {sortedReports.map((report) => renderReportCard(report, false))}
+                  {sortedMyReports.map((report) => renderReportCard(report, false))}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -474,7 +493,7 @@ export default function DashboardPage() {
                   </Link>
 
                   {/* 报告列表项 (List) */}
-                  {sortedReports.map((report) => {
+                  {sortedMyReports.map((report) => {
                     return (
                       <Link key={report.id} href={`/report/${report.id}`} className="block group">
                         <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
