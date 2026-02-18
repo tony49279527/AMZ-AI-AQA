@@ -342,20 +342,23 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* 精选报告 - 新用户展示案例 */}
+          {/* 精选报告区块 */}
           {!isLoading && (activeTab === "all" || activeTab === "featured") && (
-            <section className="mb-12">
+            <section className={cn(activeTab === "all" ? "mb-12" : "mb-0")}>
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-xl font-bold text-slate-800 mb-1 flex items-center gap-2">
                     <span className="w-1 h-6 bg-blue-600 rounded-full inline-block"></span>
-                    精选报告
+                    精选报告案例
+                    {activeTab === "featured" && (
+                      <span className="ml-1 text-sm text-slate-400 font-normal bg-slate-100 px-2 py-0.5 rounded-full">{featuredOnly.length}</span>
+                    )}
                   </h2>
                   <p className="text-sm text-slate-500 ml-3">
-                    查看优质案例，了解AI报告生成的强大能力
+                    {activeTab === "featured" ? "系统为您推荐的深度市场分析案例" : "查看优质案例，了解AI报告生成的强大能力"}
                   </p>
                 </div>
-                {activeTab === "all" && (
+                {activeTab === "all" && featuredOnly.length > 4 && (
                   <button
                     type="button"
                     onClick={() => setActiveTab("featured")}
@@ -384,31 +387,18 @@ export default function DashboardPage() {
                     return (
                       <Link key={report.id} href={`/report/${report.id}`} className="block group">
                         <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
-                          {/* Icon */}
                           <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
                             <i className={cn("fas fa-file-lines", reportTheme.iconText)} />
                           </div>
-
-                          {/* Title & Info */}
-                          <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
-                            <div className="col-span-12 md:col-span-6">
-                              <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors flex items-center gap-2">
-                                {report.title}
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600 uppercase tracking-wide">精选</span>
-                              </h3>
-                            </div>
-                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
-                              <i className="far fa-clock"></i>
-                              {formatReportDate(report.updatedAt)}
-                            </div>
-                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
-                              <i className="fas fa-list-ul"></i>
-                              {getChapterCount(report)} 个章节
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">{report.title}</h3>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
+                              <span>{formatReportDate(report.updatedAt)}</span>
+                              <span>{getChapterCount(report)} 章节</span>
                             </div>
                           </div>
-
                           <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-blue-100 transition-colors">
-                            <i className="fas fa-chevron-right text-slate-300 group-hover:text-blue-500 text-xs transition-colors" />
+                            <i className="fas fa-chevron-right text-slate-300 group-hover:text-blue-500 text-xs" />
                           </div>
                         </div>
                       </Link>
@@ -421,7 +411,7 @@ export default function DashboardPage() {
 
           {/* 我的报告 - 仅展示本系统生成的报告，与「精选报告」互斥 */}
           {!isLoading && activeTab !== "featured" && (
-            <section>
+            <section className={cn(activeTab === "all" && featuredReports.length > 0 ? "mt-12" : "mt-0")}>
               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 <span className="w-1 h-6 bg-slate-400 rounded-full inline-block"></span>
                 我的报告
@@ -433,114 +423,87 @@ export default function DashboardPage() {
                   <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
                     <i className="fas fa-inbox text-3xl text-slate-300" />
                   </div>
-                  <h3 className="text-lg font-medium text-slate-900 mb-1">暂无报告</h3>
-                  <p className="text-sm text-slate-500 mb-6">
-                    {activeTab === "mine" ? "你还没有创建过任何报告" : "列表为空"}
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">
+                    {activeTab === "mine" ? "开启您的第一次分析" : "暂无生成报告"}
+                  </h3>
+                  <p className="text-slate-500 mb-8 max-w-md mx-auto text-sm leading-relaxed">
+                    {activeTab === "mine"
+                      ? "输入 ASIN，让 AI 为您生成深度竞品分析报告，发现市场机会。"
+                      : "通过上方导航栏的分析工具，您可以快速生成属于自己的深度报告。"}
                   </p>
-                  {activeTab !== "all" && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("all")}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors underline decoration-blue-200 decoration-2 underline-offset-4 hover:decoration-blue-400"
-                    >
-                      查看全部报告
-                    </button>
-                  )}
-                  {activeTab === "all" && (
-                    <Link href="/report/new" className="inline-block">
-                      <Button variant="gradient" className="gap-2 px-6 h-10 rounded-xl shadow-md hover:shadow-lg transition-all font-medium bg-blue-600 text-white hover:bg-blue-700">
-                        <i className="fas fa-plus text-xs" />
-                        新建第一份报告
-                      </Button>
-                    </Link>
-                  )}
+                  <Link href="/report/new">
+                    <Button size="lg" className="rounded-full px-8 gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                      <i className="fas fa-plus text-sm" />
+                      立即创建报告
+                    </Button>
+                  </Link>
                 </div>
               ) : viewMode === "grid" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {/* 新建报告卡片 (Grid) - Refined Style */}
-                  <Link href="/report/new" className="group">
-                    <div className="h-[220px] flex flex-col items-center justify-center gap-4 rounded-2xl bg-white border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md group-hover:-translate-y-1">
-                      <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 group-hover:scale-110 transition-all duration-300 shadow-sm border border-blue-100">
-                        <i className="fas fa-plus text-2xl text-blue-500 group-hover:text-blue-600" />
+                <div className={cn("grid gap-6", "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+                  {activeTab !== "all" && (
+                    <Link href="/report/new" className="group">
+                      <div className="h-[220px] flex flex-col items-center justify-center gap-4 rounded-2xl bg-white border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md group-hover:-translate-y-1">
+                        <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 group-hover:scale-110 transition-all duration-300 shadow-sm border border-blue-100">
+                          <i className="fas fa-plus text-2xl text-blue-600" />
+                        </div>
+                        <div className="text-center">
+                          <span className="block font-semibold text-slate-800 text-lg">新建分析报告</span>
+                          <span className="text-xs text-slate-500">发现更多市场商机</span>
+                        </div>
                       </div>
-                      <div className="text-center">
-                        <span className="block font-bold text-lg text-slate-700 group-hover:text-blue-700 transition-colors">
-                          新建报告
-                        </span>
-                        <span className="text-xs text-slate-400 mt-1 block group-hover:text-blue-400">开始新的竞品分析</span>
-                      </div>
-                    </div>
-                  </Link>
-
-                  {/* 报告卡片 (Grid) */}
+                    </Link>
+                  )}
                   {sortedMyReports.map((report) => renderReportCard(report, false))}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {/* 新建报告行 (List) - Refined Style */}
                   <Link href="/report/new" className="block group">
                     <div className="flex items-center gap-5 p-4 rounded-xl bg-white border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all duration-200 cursor-pointer">
                       <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 border border-blue-100 transition-colors">
                         <i className="fas fa-plus text-blue-500 group-hover:text-blue-600" />
                       </div>
                       <div>
-                        <span className="font-bold text-slate-700 group-hover:text-blue-700 transition-colors block">
-                          新建报告
-                        </span>
+                        <span className="font-bold text-slate-700 group-hover:text-blue-700 transition-colors block">新建报告</span>
                         <span className="text-xs text-slate-400 group-hover:text-blue-400">点击开始分析</span>
                       </div>
                     </div>
                   </Link>
-
-                  {/* 报告列表项 (List) */}
-                  {sortedMyReports.map((report) => {
-                    return (
-                      <Link key={report.id} href={`/report/${report.id}`} className="block group">
-                        <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
-                          {/* Icon */}
-                          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
-                            <i className={cn("fas fa-file-alt", reportTheme.iconText)} />
+                  {sortedMyReports.map((report) => (
+                    <Link key={report.id} href={`/report/${report.id}`} className="block group">
+                      <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
+                        <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
+                          <i className={cn("fas fa-file-alt", reportTheme.iconText)} />
+                        </div>
+                        <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
+                          <div className="col-span-12 md:col-span-6">
+                            <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">{report.title}</h3>
                           </div>
-
-                          {/* Title & Info */}
-                          <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
-                            <div className="col-span-12 md:col-span-6">
-                              <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">
-                                {report.title}
-                              </h3>
-                            </div>
-                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
-                              <i className="far fa-clock"></i>
-                              {formatReportDate(report.updatedAt)}
-                            </div>
-                            <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
-                              <i className="fas fa-list-ul"></i>
-                              {getChapterCount(report)} 个章节
-                            </div>
+                          <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
+                            <i className="far fa-clock" />
+                            {formatReportDate(report.updatedAt)}
                           </div>
-
-                          {/* Status */}
-                          <div className="flex-shrink-0 ml-4">
-                            {report.status === "completed" ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-600 border border-green-200/50">
-                                <i className="fas fa-check-circle mr-1.5 text-[10px]"></i>
-                                已完成
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200/50">
-                                <i className="fas fa-spinner fa-spin mr-1.5 text-[10px]"></i>
-                                {report.progress}%
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-blue-100 transition-colors">
-                            <i className="fas fa-chevron-right text-slate-300 group-hover:text-blue-500 text-xs transition-colors" />
+                          <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
+                            <i className="fas fa-list-ul" />
+                            {getChapterCount(report)} 个章节
                           </div>
                         </div>
-                      </Link>
-                    )
-                  })}
+                        <div className="flex-shrink-0 ml-4">
+                          {report.status === "completed" ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-600 border border-green-200/50">
+                              <i className="fas fa-check-circle mr-1.5 text-[10px]" /> 已完成
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200/50">
+                              <i className="fas fa-spinner fa-spin mr-1.5 text-[10px]" /> {report.progress}%
+                            </span>
+                          )}
+                        </div>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-blue-100 transition-colors">
+                          <i className="fas fa-chevron-right text-slate-300 group-hover:text-blue-500 text-xs" />
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
                 </div>
               )}
             </section>

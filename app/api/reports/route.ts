@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
                     return {
                         id,
                         title,
+                        source: "featured", // 默认旧报告设为精选
                         status: "completed" as const,
                         progress: 100,
                         createdAt: stat.birthtime.toISOString(),
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
                 return {
                     id,
                     title: meta.title,
+                    source: meta.source || "featured", // 从元数据获取，默认精选
                     status: "completed" as const,
                     progress: 100,
                     createdAt: meta.createdAt,
