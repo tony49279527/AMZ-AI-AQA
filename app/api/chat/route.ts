@@ -314,7 +314,7 @@ ${selectedContent}
 
 export async function POST(request: NextRequest) {
     return withApiAudit(request, "chat:complete", async ({ requestId }) => {
-        const guardError = enforceApiGuard(request, { route: "chat:complete", maxRequests: 40, windowMs: 60_000, requestId })
+        const guardError = await enforceApiGuard(request, { route: "chat:complete", maxRequests: 40, windowMs: 60_000, requestId })
         if (guardError) return guardError
 
         try {
@@ -400,7 +400,8 @@ export async function POST(request: NextRequest) {
                     let buffer = ""
 
                     try {
-                        while (true) {
+                        let upstreamDone = false
+                        while (!upstreamDone) {
                             const { done, value } = await reader.read()
                             if (done) break
 
@@ -409,12 +410,12 @@ export async function POST(request: NextRequest) {
                             const lines = buffer.split("\n")
                             buffer = lines.pop() || ""
 
-                            let upstreamDone = false
                             for (const line of lines) {
                                 const trimmed = line.trim()
-                                if (!trimmed || trimmed === "data: [DONE]") {
-                                    if (trimmed === "data: [DONE]") upstreamDone = true
-                                    continue
+                                if (!trimmed) continue
+                                if (trimmed === "data: [DONE]") {
+                                    upstreamDone = true
+                                    break
                                 }
 
                                 if (trimmed.startsWith("data: ")) {
@@ -432,10 +433,8 @@ export async function POST(request: NextRequest) {
                                     }
                                 }
                             }
-                            if (upstreamDone) break
                         }
 
-                        if (upstreamDone) break
                         if (buffer.trim()) {
                             const trimmed = buffer.trim()
                             if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {

@@ -52,7 +52,7 @@ export async function GET(
   context: { params: Promise<unknown> }
 ) {
   return withApiAudit(request, "report:files:get", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "report:files:get", maxRequests: 120, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "report:files:get", maxRequests: 120, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const { reportId, fileName } = await resolveParams(context)

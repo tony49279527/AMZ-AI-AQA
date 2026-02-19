@@ -39,7 +39,7 @@ function buildUserContent(prompt: string, referenceImages: string[]): { type: "t
 
 export async function POST(request: NextRequest) {
   return withApiAudit(request, "image-generate", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "image-generate", maxRequests: 30, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "image-generate", maxRequests: 30, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const apiKey = process.env.OPENROUTER_API_KEY

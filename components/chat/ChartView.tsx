@@ -37,7 +37,11 @@ export function ChartView({ config }: { config: string }) {
     let chartConfig: ChartData
 
     try {
-        chartConfig = JSON.parse(config)
+        const parsed = JSON.parse(config)
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.data)) {
+            throw new Error("invalid chart config")
+        }
+        chartConfig = parsed as ChartData
     } catch {
         return (
             <div className="my-6 p-6 bg-red-50/50 border border-red-100 rounded-2xl text-red-600">

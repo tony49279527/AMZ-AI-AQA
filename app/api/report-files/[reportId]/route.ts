@@ -88,7 +88,7 @@ export async function POST(
   context: { params: Promise<unknown> }
 ) {
   return withApiAudit(request, "report:files:upload", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "report:files:upload", maxRequests: 20, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "report:files:upload", maxRequests: 20, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const reportId = await resolveReportId(context)
@@ -178,7 +178,7 @@ export async function DELETE(
   context: { params: Promise<unknown> }
 ) {
   return withApiAudit(request, "report:files:delete", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "report:files:delete", maxRequests: 40, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "report:files:delete", maxRequests: 40, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const reportId = await resolveReportId(context)

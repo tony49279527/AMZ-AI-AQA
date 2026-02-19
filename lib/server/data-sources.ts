@@ -41,28 +41,29 @@ export async function fetchAmazonDataFromRapidAPI(
   if (!RAPIDAPI_KEY || asinList.length === 0) return ""
   const max = Math.min(options?.maxProducts ?? 5, asinList.length)
   const country = MARKETPLACE_TO_COUNTRY[marketplace] || marketplace
-  const results: string[] = []
+  const apiPath = RAPIDAPI_AMAZON_PATH.replace(/^\//, "")
 
-  for (let i = 0; i < max; i++) {
-    const asin = asinList[i].trim()
-    if (!asin) continue
-    try {
-      const path = RAPIDAPI_AMAZON_PATH.replace(/^\//, "")
-      const url = `https://${RAPIDAPI_AMAZON_HOST}/${path}?asin=${encodeURIComponent(asin)}&country=${country}`
+  const settled = await Promise.allSettled(
+    asinList.slice(0, max).filter(a => a.trim()).map(async (rawAsin) => {
+      const asin = rawAsin.trim()
+      const url = `https://${RAPIDAPI_AMAZON_HOST}/${apiPath}?asin=${encodeURIComponent(asin)}&country=${country}`
       const res = await fetch(url, {
         method: "GET",
         headers: {
-          "X-RapidAPI-Key": RAPIDAPI_KEY,
+          "X-RapidAPI-Key": RAPIDAPI_KEY!,
           "X-RapidAPI-Host": RAPIDAPI_AMAZON_HOST,
         },
       })
-      if (!res.ok) continue
+      if (!res.ok) return null
       const data = (await res.json()) as Record<string, unknown>
-      results.push(`[ASIN: ${asin}]\n${JSON.stringify(data, null, 0)}`)
-    } catch {
-      // 单条失败不阻塞，继续下一个
-    }
-  }
+      return `[ASIN: ${asin}]\n${JSON.stringify(data, null, 0)}`
+    })
+  )
+
+  const results = settled
+    .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled")
+    .map(r => r.value)
+    .filter((v): v is string => !!v)
 
   if (results.length === 0) return ""
   return "以下为通过 RapidAPI 获取的亚马逊产品数据（JSON），请据此做分析：\n\n" + results.join("\n\n---\n\n")
@@ -129,14 +130,18 @@ export async function fetchCombinedReviewsFromRapidAPI(
   if (!RAPIDAPI_KEY || asinList.length === 0) return ""
   const country = MARKETPLACE_TO_COUNTRY[marketplace] || marketplace
   const maxPerAsin = options?.maxPerAsin ?? 100
-  const chunks: string[] = []
 
-  for (const asin of asinList) {
-    const asinTrim = asin.trim()
-    if (!asinTrim) continue
-    const reviews = await fetchProductReviewsFromRapidAPI(asinTrim, country, { maxReviews: maxPerAsin })
-    if (reviews.length > 0) chunks.push(reviews.join("\n\n"))
-  }
+  const settled = await Promise.allSettled(
+    asinList.filter(a => a.trim()).map(async (asin) => {
+      const reviews = await fetchProductReviewsFromRapidAPI(asin.trim(), country, { maxReviews: maxPerAsin })
+      return reviews.length > 0 ? reviews.join("\n\n") : null
+    })
+  )
+
+  const chunks = settled
+    .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled")
+    .map(r => r.value)
+    .filter((v): v is string => !!v)
 
   if (chunks.length === 0) return ""
   return "以下为通过 RapidAPI 获取的亚马逊产品评论（按 ASIN 区分），请据此分析主品与各竞品的用户反馈：\n\n" + chunks.join("\n\n---\n\n")
@@ -406,7 +411,7 @@ export async function fetchReferenceYouTubeTranscriptByKeywordExtended(
   if (videos.length === 0) return { combined: "", items: [] }
   const items: YouTubeSourceItem[] = []
   const parts: string[] = []
-  const maxV = Math.min(videos.length, 10)
+  const maxV = Math.min(videos.length, youtubeCount)
   for (let i = 0; i < maxV; i++) {
     const v = videos[i]
     const text = await fetchYouTubeTranscript(v.videoId)

@@ -11,12 +11,16 @@ interface ExportButtonProps {
 
 export function ExportButton({ messages, reportTitle }: ExportButtonProps) {
     const handleExport = () => {
-        const header = `# AI 问答记录: ${reportTitle}\n报告日期: ${new Date().toLocaleDateString()}\n\n---\n\n`
+        const now = new Date()
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+        const header = `# AI 问答记录: ${reportTitle}\n报告日期: ${dateStr}\n\n---\n\n`
         const body = messages
             .filter((m) => m.role !== "system")
             .map((m) => {
                 const role = m.role === "user" ? "用户" : "AI 助手"
-                return `### ${role} (${m.timestamp.toLocaleTimeString()})\n\n${m.content}\n\n`
+                const ts = m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp)
+                const timeStr = Number.isNaN(ts.getTime()) ? "" : ts.toLocaleTimeString("zh-CN")
+                return `### ${role}${timeStr ? ` (${timeStr})` : ""}\n\n${m.content}\n\n`
             })
             .join("---\n\n")
 
@@ -25,7 +29,8 @@ export function ExportButton({ messages, reportTitle }: ExportButtonProps) {
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
         a.href = url
-        a.download = `Chat_History_${reportTitle.replace(/\s+/g, "_")}.md`
+        const safeTitle = reportTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_").slice(0, 50)
+        a.download = `Chat_${safeTitle}_${dateStr}.md`
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)

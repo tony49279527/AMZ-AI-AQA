@@ -60,36 +60,42 @@ export default function DashboardPage() {
   const [recentReports, setRecentReports] = useState<Report[]>([])
   const [loadError, setLoadError] = useState("")
 
-  // 从 API 加载真实报告列表
-  useEffect(() => {
-    async function loadReports() {
-      try {
-        const response = await fetch("/api/reports", {
-          headers: buildClientApiHeaders(),
-        })
-        if (!response.ok) {
-          throw await buildClientApiError(response, `加载报告失败 (HTTP ${response.status})`)
-        }
-
-        const data = await response.json()
-        const rawList = Array.isArray(data?.reports) ? data.reports : []
-        setRecentReports(
-          rawList.map((r: Record<string, unknown>) => ({
-            ...r,
-            createdAt: new Date(r.createdAt as string),
-            updatedAt: new Date(r.updatedAt as string),
-            archivedStatus: r.archivedStatus,
-            source: r.source === "uploaded" ? "uploaded" : r.source === "featured" ? "featured" : "system",
-          }))
-        )
-      } catch (error) {
-        console.error("Failed to load reports:", error)
-        setLoadError(formatClientErrorMessage(error, "加载报告失败，请稍后重试"))
-      } finally {
-        setIsLoading(false)
+  const loadReports = async (signal?: AbortSignal) => {
+    setIsLoading(true)
+    setLoadError("")
+    try {
+      const response = await fetch("/api/reports", {
+        headers: buildClientApiHeaders(),
+        signal,
+      })
+      if (!response.ok) {
+        throw await buildClientApiError(response, `加载报告失败 (HTTP ${response.status})`)
       }
+
+      const data = await response.json()
+      const rawList = Array.isArray(data?.reports) ? data.reports : []
+      setRecentReports(
+        rawList.map((r: Record<string, unknown>) => ({
+          ...r,
+          createdAt: new Date(r.createdAt as string),
+          updatedAt: new Date(r.updatedAt as string),
+          archivedStatus: r.archivedStatus,
+          source: r.source === "uploaded" ? "uploaded" : r.source === "featured" ? "featured" : "system",
+        }))
+      )
+    } catch (error) {
+      if (signal?.aborted) return
+      console.error("Failed to load reports:", error)
+      setLoadError(formatClientErrorMessage(error, "加载报告失败，请稍后重试"))
+    } finally {
+      setIsLoading(false)
     }
-    loadReports()
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    loadReports(controller.signal)
+    return () => controller.abort()
   }, [])
 
   const tabs: { id: TabId; label: string }[] = [
@@ -270,8 +276,11 @@ export default function DashboardPage() {
 
           {/* 加载中骨架屏 */}
           {loadError && (
-            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-              {loadError}
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 flex items-center justify-between">
+              <span>{loadError}</span>
+              <Button variant="outline" size="sm" onClick={() => loadReports()} className="ml-4 shrink-0">
+                重试
+              </Button>
             </div>
           )}
 

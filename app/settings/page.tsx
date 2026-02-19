@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Navigation } from "@/components/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -103,38 +103,41 @@ function mergeSettings(partial: Partial<AppSettings>): AppSettings {
 }
 
 export default function SettingsPage() {
-  // 从 localStorage 加载设置（如果存在）
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    try {
-      if (typeof window === "undefined") return defaultSettings
-      const stored = localStorage.getItem("app_settings")
-      if (!stored) return defaultSettings
-      const parsed = JSON.parse(stored) as Partial<AppSettings>
-      return mergeSettings(parsed ?? {})
-    } catch {
-      return defaultSettings
-    }
-  })
-
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [saved, setSaved] = useState(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("app_settings")
+      if (stored) {
+        const parsed = JSON.parse(stored) as Partial<AppSettings>
+        setSettings(mergeSettings(parsed ?? {}))
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   const handleSave = () => {
     try {
-      if (typeof window !== "undefined") localStorage.setItem("app_settings", JSON.stringify(settings))
+      localStorage.setItem("app_settings", JSON.stringify(settings))
       setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => setSaved(false), 3000)
     } catch {
       console.warn("Failed to save settings to localStorage")
     }
   }
 
+  useEffect(() => {
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  }, [])
+
   const handleReset = () => {
+    if (!window.confirm("确认重置所有设置为默认值？")) return
     setSettings(defaultSettings)
     try {
-      if (typeof window !== "undefined") localStorage.removeItem("app_settings")
-    } catch {
-      // ignore
-    }
+      localStorage.removeItem("app_settings")
+    } catch { /* ignore */ }
   }
 
   return (

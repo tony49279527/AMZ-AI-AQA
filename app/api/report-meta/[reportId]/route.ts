@@ -146,7 +146,7 @@ export async function GET(
   context: { params: Promise<unknown> }
 ) {
   return withApiAudit(request, "report:meta:get", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "report:meta", maxRequests: 120, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "report:meta", maxRequests: 120, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const reportId = await resolveReportId(context)
@@ -168,7 +168,7 @@ export async function PATCH(
   context: { params: Promise<unknown> }
 ) {
   return withApiAudit(request, "report:meta:update", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "report:meta:update", maxRequests: 60, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "report:meta:update", maxRequests: 60, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const reportId = await resolveReportId(context)
@@ -211,7 +211,7 @@ export async function DELETE(
   context: { params: Promise<unknown> }
 ) {
   return withApiAudit(request, "report:archive", async ({ requestId }) => {
-    const guardError = enforceApiGuard(request, { route: "report:archive", maxRequests: 120, windowMs: 60_000, requestId })
+    const guardError = await enforceApiGuard(request, { route: "report:archive", maxRequests: 120, windowMs: 60_000, requestId })
     if (guardError) return guardError
 
     const reportId = await resolveReportId(context)

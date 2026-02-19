@@ -2,11 +2,14 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/lib/auth-context"
 
 export function Navigation() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, logout } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const links = [
@@ -34,7 +37,7 @@ export function Navigation() {
                   href={link.href}
                   className={cn(
                     "text-[14px] font-semibold transition-colors",
-                    pathname === link.href || pathname?.startsWith(link.href)
+                    pathname === link.href || pathname?.startsWith(link.href + "/")
                       ? "text-blue-600"
                       : "text-slate-500 hover:text-slate-900",
                   )}
@@ -42,6 +45,25 @@ export function Navigation() {
                   {link.label}
                 </Link>
               ))}
+            </div>
+
+            {/* 用户状态 */}
+            <div className="hidden md:flex items-center gap-3 ml-2 pl-4 border-l border-slate-200">
+              {user ? (
+                <>
+                  <span className="text-xs text-slate-500 truncate max-w-[120px]">{user.name || user.email}</span>
+                  <button
+                    onClick={async () => { await logout(); router.push("/login") }}
+                    className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                  >
+                    退出
+                  </button>
+                </>
+              ) : (
+                <Link href="/login" className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                  登录
+                </Link>
+              )}
             </div>
 
             {/* 移动端汉堡按钮 */}
@@ -67,7 +89,7 @@ export function Navigation() {
                 onClick={() => setMobileOpen(false)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  pathname === link.href || pathname?.startsWith(link.href)
+                  pathname === link.href || pathname?.startsWith(link.href + "/")
                     ? "bg-blue-50 text-blue-600"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
                 )}
@@ -76,6 +98,22 @@ export function Navigation() {
                 {link.label}
               </Link>
             ))}
+            <div className="border-t border-slate-100 mt-2 pt-2">
+              {user ? (
+                <button
+                  onClick={async () => { setMobileOpen(false); await logout(); router.push("/login") }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 w-full"
+                >
+                  <i className="fas fa-right-from-bracket w-4 text-center" />
+                  退出（{user.name || user.email}）
+                </button>
+              ) : (
+                <Link href="/login" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50">
+                  <i className="fas fa-right-to-bracket w-4 text-center" />
+                  登录
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       )}

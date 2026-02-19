@@ -12,11 +12,7 @@ import { ChartView } from "@/components/chat/ChartView"
 import { buildClientApiHeaders } from "@/lib/client-api"
 import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-error"
 import { DEFAULT_LLM_MODEL, DEFAULT_IMAGE_MODEL, LLM_MODEL_OPTIONS, IMAGE_MODEL_OPTIONS } from "@/lib/constants"
-
-// localStorage keys
-const getSessionsKey = (reportId: string) => `chat_sessions_v2_${reportId}`
-const getSessionMessagesKey = (reportId: string, sessionId: string) => `chat_messages_v2_${reportId}_${sessionId}`
-const getLegacyKey = (reportId: string) => `chat_history_${reportId}`
+import { useAuth } from "@/lib/auth-context"
 
 interface ChatSession {
   id: string
@@ -32,6 +28,7 @@ function formatSessionDate(updatedAt: string): string {
 export default function ChatPage() {
   const params = useParams()
   const router = useRouter()
+  const { user, isLoading: authLoading } = useAuth()
   const reportId = params.reportId as string
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -39,7 +36,7 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
-  const [showHistory, setShowHistory] = useState(true)
+  const [showHistory, setShowHistory] = useState(() => typeof window !== "undefined" ? window.innerWidth >= 1024 : true)
   const [showContext, setShowContext] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -57,6 +54,7 @@ export default function ChatPage() {
   const [imageRefFiles, setImageRefFiles] = useState<File[]>([])
   const [imageAspectRatio, setImageAspectRatio] = useState<string>("1:1")
   const [imageGenerating, setImageGenerating] = useState(false)
+  const streamAbortRef = useRef<AbortController | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([])
@@ -204,104 +202,73 @@ export default function ChatPage() {
     return () => controller.abort()
   }, [reportId])
 
-  // ——— 加载会话列表及历史 ———
+  // ——— 从服务端加载会话列表 ———
   useEffect(() => {
-    if (!reportId || typeof reportId !== "string") return
-    const sessionsKey = getSessionsKey(reportId)
-    const legacyKey = getLegacyKey(reportId)
-    let storedSessions: string | null = null
-    let legacyData: string | null = null
-    try {
-      storedSessions = localStorage.getItem(sessionsKey)
-      legacyData = localStorage.getItem(legacyKey)
-    } catch {
-      // ignore
-    }
+    if (!reportId || typeof reportId !== "string" || !user) return
+    let cancelled = false
 
-    let currentSessions: ChatSession[] = []
-
-    if (storedSessions) {
+    async function loadSessions() {
       try {
-        currentSessions = JSON.parse(storedSessions)
+        const res = await fetch(`/api/chat-storage/sessions?reportId=${encodeURIComponent(reportId)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        let serverSessions: ChatSession[] = Array.isArray(data.sessions) ? data.sessions : []
+
+        if (serverSessions.length === 0 && !cancelled) {
+          const createRes = await fetch("/api/chat-storage/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reportId, title: "新对话" }),
+          })
+          if (createRes.ok) {
+            const createData = await createRes.json()
+            if (createData.session) serverSessions = [createData.session]
+          }
+        }
+
+        if (!cancelled && serverSessions.length > 0) {
+          setSessions(serverSessions)
+          setActiveSessionId(serverSessions[0].id)
+        }
       } catch (e) {
-        console.error("Error parsing sessions:", e)
+        console.error("Failed to load sessions:", e)
       }
     }
 
-    // 迁移旧数据
-    if (legacyData && currentSessions.length === 0) {
-      const sessionId = "legacy-session"
-      try {
-        const legacyMessages = JSON.parse(legacyData)
-        currentSessions = [{
-          id: sessionId,
-          title: "初始对话 (已迁移)",
-          updatedAt: new Date().toISOString()
-        }]
-        localStorage.setItem(getSessionMessagesKey(reportId, sessionId), JSON.stringify(legacyMessages))
-        localStorage.removeItem(legacyKey)
-        localStorage.setItem(sessionsKey, JSON.stringify(currentSessions))
-      } catch (e) {
-        console.error("Error migrating legacy data:", e)
-      }
-    }
+    loadSessions()
+    return () => { cancelled = true }
+  }, [reportId, user])
 
-    // 如果还没有任何会话，创建一个
-    if (currentSessions.length === 0) {
-      const sessionId = Date.now().toString()
-      currentSessions = [{
-        id: sessionId,
-        title: "新对话",
-        updatedAt: new Date().toISOString()
-      }]
-      try {
-        localStorage.setItem(sessionsKey, JSON.stringify(currentSessions))
-      } catch {
-        // ignore storage errors
-      }
-    }
-
-    setSessions(currentSessions)
-    // 默认激活第一个
-    if (currentSessions.length > 0) {
-      setActiveSessionId(currentSessions[0].id)
-    }
-  }, [reportId])
-
-  // 切换会话时加载消息
+  // 切换会话时从服务端加载消息
   useEffect(() => {
-    if (!activeSessionId || !reportId || typeof reportId !== "string") return
-
-    const messagesKey = getSessionMessagesKey(reportId, activeSessionId)
-    let stored: string | null = null
-    try {
-      stored = localStorage.getItem(messagesKey)
-    } catch {
-      stored = null
-    }
-
-    // 标记当前正在加载这个会话
+    if (!activeSessionId || !reportId || typeof reportId !== "string" || !user) return
+    let cancelled = false
     loadedSessionIdRef.current = activeSessionId
 
-    if (stored) {
+    async function loadMessages() {
       try {
-        const parsed = JSON.parse(stored)
-        setMessages(
-          parsed.map((m: Record<string, unknown>) => {
-            const { images: _img, imageCount: _n, ...rest } = m
-            return { ...rest, timestamp: new Date((rest.timestamp as string) || Date.now()) } as ChatMessage
-          })
-        )
-      } catch (e) {
-        console.error("Failed to parse messages for session", activeSessionId, e)
-        setMessages([])
-        initWelcomeMessage()
+        const res = await fetch(`/api/chat-storage/messages?reportId=${encodeURIComponent(reportId)}&sessionId=${encodeURIComponent(activeSessionId!)}`)
+        if (cancelled) return
+        if (!res.ok) { initWelcomeMessage(); return }
+        const data = await res.json()
+        if (cancelled) return
+        const msgs = Array.isArray(data.messages) ? data.messages : []
+        if (msgs.length > 0) {
+          setMessages(msgs.map((m: Record<string, unknown>) => ({
+            ...m, timestamp: new Date((m.timestamp as string) || Date.now()),
+          }) as ChatMessage))
+        } else {
+          initWelcomeMessage()
+        }
+      } catch {
+        if (!cancelled) initWelcomeMessage()
       }
-    } else {
-      setMessages([])
-      initWelcomeMessage()
     }
-  }, [activeSessionId, reportId])
+
+    loadMessages()
+    return () => { cancelled = true }
+  }, [activeSessionId, reportId, user])
 
   function initWelcomeMessage() {
     setMessages([
@@ -314,67 +281,61 @@ export default function ChatPage() {
     ])
   }
 
-  // ——— 保存聊天历史（debounce 1.5s，避免流式期间每 token 写 localStorage）———
+  // ——— 保存聊天消息到服务端（debounce 1.5s）———
   useEffect(() => {
-    if (!activeSessionId || !reportId) return
+    if (!activeSessionId || !reportId || !user) return
     if (loadedSessionIdRef.current !== activeSessionId) return
 
     if (messages.length > 0 && (messages[0]?.id !== "welcome" || messages.length > 1)) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
-        try {
-          const toStore = messages.map((m) => {
-            const { images, ...rest } = m
-            return { ...rest, ...(images?.length ? { imageCount: images.length } : {}) }
-          })
-          localStorage.setItem(getSessionMessagesKey(reportId, activeSessionId), JSON.stringify(toStore))
-          setSessions(prev => prev.map(s =>
-            s.id === activeSessionId ? { ...s, updatedAt: new Date().toISOString() } : s
-          ))
-        } catch { /* 无痕/配额满等环境下忽略 */ }
+        const toStore = messages.map((m) => {
+          const { images, ...rest } = m
+          return { ...rest, ...(images?.length ? { imageCount: images.length } : {}) }
+        })
+        fetch("/api/chat-storage/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reportId, sessionId: activeSessionId, messages: toStore }),
+        }).catch(() => {})
+        setSessions(prev => prev.map(s =>
+          s.id === activeSessionId ? { ...s, updatedAt: new Date().toISOString() } : s
+        ))
       }, 1500)
     }
 
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
-  }, [messages, reportId, activeSessionId])
+  }, [messages, reportId, activeSessionId, user])
 
-  // 持久化会话列表
-  useEffect(() => {
-    if (sessions.length > 0) {
-      try {
-        localStorage.setItem(getSessionsKey(reportId), JSON.stringify(sessions))
-      } catch {
-        // 无痕/配额满等环境下 localStorage 可能抛错，忽略
+  const createNewSession = async () => {
+    try {
+      const res = await fetch("/api/chat-storage/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId, title: "新对话" }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.session) {
+          setSessions(prev => [data.session, ...prev])
+          setActiveSessionId(data.session.id)
+          setMessages([])
+        }
       }
-    }
-  }, [sessions, reportId])
-
-  const createNewSession = () => {
-    const sessionId = Date.now().toString()
-    const newSession: ChatSession = {
-      id: sessionId,
-      title: "新对话",
-      updatedAt: new Date().toISOString()
-    }
-    setSessions(prev => [newSession, ...prev])
-    setActiveSessionId(sessionId)
-    setMessages([]) // 切换 useEffect 会处理加载
+    } catch { /* ignore */ }
   }
 
-  // 预留：会话删除（待与 UI 联动）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 预留供后续会话列表删除按钮使用
-  const deleteSession = (e: React.MouseEvent, sessionId: string) => {
+  const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation()
+    try {
+      await fetch(`/api/chat-storage/sessions?reportId=${encodeURIComponent(reportId)}&sessionId=${encodeURIComponent(sessionId)}`, { method: "DELETE" })
+    } catch { /* ignore */ }
     const newSessions = sessions.filter(s => s.id !== sessionId)
     if (newSessions.length === 0) {
-      // 至少保留一个
       createNewSession()
       return
     }
-
     setSessions(newSessions)
-    localStorage.removeItem(getSessionMessagesKey(reportId, sessionId))
-
     if (activeSessionId === sessionId) {
       setActiveSessionId(newSessions[0].id)
     }
@@ -502,11 +463,15 @@ export default function ChatPage() {
     }
     setMessages((prev) => [...prev, aiMessage])
 
+    const abortCtrl = new AbortController()
+    streamAbortRef.current = abortCtrl
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: buildClientApiHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ messages: apiMessages, reportId, model: chatModel }),
+        signal: abortCtrl.signal,
       })
 
       if (!response.ok) {
@@ -594,31 +559,42 @@ export default function ChatPage() {
         )
       )
 
-      // 如果是第一条用户消息，尝试重命名会话
-      if (messages.length <= 1) {
+      if (messages.length <= 1 && activeSessionId) {
         const newTitle = text.slice(0, 15) + (text.length > 15 ? "..." : "")
         setSessions(prev => prev.map(s =>
           s.id === activeSessionId ? { ...s, title: newTitle } : s
         ))
+        fetch("/api/chat-storage/sessions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reportId, sessionId: activeSessionId, title: newTitle }),
+        }).catch(() => {})
       }
     } catch (error) {
-      console.error("Chat error:", error)
-      const message = formatClientErrorMessage(error, "未知错误")
-      // 更新为错误消息
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMessageId
-            ? {
-              ...m,
-              content: `抱歉，回答时出现错误: ${message}。请检查 API 配置后重试。`,
-            }
-            : m
+      if (abortCtrl.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((m) => m.id === aiMessageId ? { ...m, content: m.content || "（已取消）" } : m)
         )
-      )
+      } else {
+        console.error("Chat error:", error)
+        const message = formatClientErrorMessage(error, "未知错误")
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMessageId
+              ? { ...m, content: `抱歉，回答时出现错误: ${message}。请检查 API 配置后重试。` }
+              : m
+          )
+        )
+      }
     } finally {
+      streamAbortRef.current = null
       setIsStreaming(false)
     }
   }
+
+  const handleStopStream = useCallback(() => {
+    streamAbortRef.current?.abort()
+  }, [])
 
   const remarkPluginsMemo = useMemo(() => [remarkGfm], [])
   const chatMarkdownComponents = useMemo(() => ({
@@ -661,12 +637,37 @@ export default function ChatPage() {
     } catch { /* clipboard unavailable */ }
   }
 
-  // 预留：清空当前会话消息（待与 UI 联动）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 预留供设置/更多操作使用
-  const clearHistory = () => {
+  const clearHistory = async () => {
     if (!activeSessionId) return
-    localStorage.removeItem(getSessionMessagesKey(reportId, activeSessionId))
     initWelcomeMessage()
+    try {
+      await fetch("/api/chat-storage/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId, sessionId: activeSessionId, messages: [] }),
+      })
+    } catch { /* ignore */ }
+  }
+
+  if (!authLoading && !user) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="flex items-center justify-center" style={{ minHeight: "calc(100vh - 64px)" }}>
+          <div className="text-center space-y-4">
+            <i className="fas fa-lock text-4xl text-muted-foreground/50" />
+            <p className="text-lg text-muted-foreground">请先登录以使用智能问答功能</p>
+            <button
+              onClick={() => router.push("/login")}
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+            >
+              <i className="fas fa-sign-in-alt" />
+              前往登录
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -731,14 +732,14 @@ export default function ChatPage() {
                     key={session.id}
                     onClick={() => setActiveSessionId(session.id)}
                     className={cn(
-                      "px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1",
+                      "group/session px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1 relative",
                       activeSessionId === session.id
                         ? "bg-white border-slate-200/60 shadow-sm"
                         : "bg-transparent border-transparent hover:bg-white/40"
                     )}
                   >
                     <div className={cn(
-                      "font-medium text-sm truncate mb-1",
+                      "font-medium text-sm truncate mb-1 pr-6",
                       activeSessionId === session.id ? "text-primary font-semibold" : "text-slate-700"
                     )}>
                       {session.title}
@@ -747,6 +748,15 @@ export default function ChatPage() {
                       <i className="far fa-clock text-[9px] opacity-70" />
                       {formatSessionDate(session.updatedAt)}
                     </div>
+                    {sessions.length > 1 && (
+                      <button
+                        onClick={(e) => deleteSession(e, session.id)}
+                        className="absolute top-2.5 right-2 w-6 h-6 rounded-md flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover/session:opacity-100 transition-all"
+                        title="删除此对话"
+                      >
+                        <i className="fas fa-xmark text-xs" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -797,14 +807,14 @@ export default function ChatPage() {
                           setShowHistory(false)
                         }}
                         className={cn(
-                          "px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1",
+                          "group/session px-3 py-3 rounded-xl cursor-pointer transition-all border mb-1 relative",
                           activeSessionId === session.id
                             ? "bg-white border-slate-200/60 shadow-sm"
                             : "bg-transparent border-transparent hover:bg-white/40"
                         )}
                       >
                         <div className={cn(
-                          "font-medium text-sm truncate mb-1",
+                          "font-medium text-sm truncate mb-1 pr-6",
                           activeSessionId === session.id ? "text-primary font-semibold" : "text-slate-700"
                         )}>
                           {session.title}
@@ -813,6 +823,15 @@ export default function ChatPage() {
                           <i className="far fa-clock text-[9px] opacity-70" />
                           {formatSessionDate(session.updatedAt)}
                         </div>
+                        {sessions.length > 1 && (
+                          <button
+                            onClick={(e) => { deleteSession(e, session.id); setShowHistory(false) }}
+                            className="absolute top-2.5 right-2 w-6 h-6 rounded-md flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover/session:opacity-100 transition-all"
+                            title="删除此对话"
+                          >
+                            <i className="fas fa-xmark text-xs" />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -846,7 +865,15 @@ export default function ChatPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2" ref={modelDropdownRef}>
+            <div className="flex items-center gap-1.5" ref={modelDropdownRef}>
+              <button
+                onClick={() => { if (window.confirm("确定要清空当前对话吗？")) clearHistory() }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
+                title="清空当前对话"
+                disabled={isStreaming || messages.length <= 1}
+              >
+                <i className="fas fa-eraser text-[10px]" />
+              </button>
               <div className="relative">
                 <button
                   type="button"
@@ -1192,23 +1219,33 @@ export default function ChatPage() {
                     />
 
                     <div className="flex items-center gap-0.5 sm:gap-1 pb-1 sm:pb-1.5 flex-shrink-0">
-                      <button
-                        onClick={() => void handleSend()}
-                        disabled={(qaMode === "llm" && (!input.trim() || isStreaming)) || (qaMode === "image" && !(input.trim() || imageRefFiles.length > 0) || imageGenerating)}
-                        className={cn(
-                          "w-7 sm:w-9 h-7 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center transition-all shadow-sm ml-0 sm:ml-1",
-                          (qaMode === "llm" ? input.trim() : (input.trim() || imageRefFiles.length > 0)) && !isStreaming && !imageGenerating
-                            ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-500/20 active:scale-95 transform"
-                            : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                        )}
-                        title={qaMode === "image" ? "生成图片" : "发送"}
-                      >
-                        {qaMode === "image" && imageGenerating ? (
-                          <i className="fas fa-spinner fa-spin text-xs" />
-                        ) : (
-                          <i className={cn("fas text-xs sm:text-sm font-bold", qaMode === "image" ? "fa-wand-magic-sparkles" : "fa-arrow-up")} />
-                        )}
-                      </button>
+                      {isStreaming ? (
+                        <button
+                          onClick={handleStopStream}
+                          className="w-7 sm:w-9 h-7 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center transition-all shadow-sm ml-0 sm:ml-1 bg-red-500 text-white hover:bg-red-600 active:scale-95 transform"
+                          title="停止生成"
+                        >
+                          <i className="fas fa-stop text-xs sm:text-sm" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => void handleSend()}
+                          disabled={(qaMode === "llm" && !input.trim()) || (qaMode === "image" && !(input.trim() || imageRefFiles.length > 0) || imageGenerating)}
+                          className={cn(
+                            "w-7 sm:w-9 h-7 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center transition-all shadow-sm ml-0 sm:ml-1",
+                            (qaMode === "llm" ? input.trim() : (input.trim() || imageRefFiles.length > 0)) && !imageGenerating
+                              ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-500/20 active:scale-95 transform"
+                              : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                          )}
+                          title={qaMode === "image" ? "生成图片" : "发送"}
+                        >
+                          {qaMode === "image" && imageGenerating ? (
+                            <i className="fas fa-spinner fa-spin text-xs" />
+                          ) : (
+                            <i className={cn("fas text-xs sm:text-sm font-bold", qaMode === "image" ? "fa-wand-magic-sparkles" : "fa-arrow-up")} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1280,7 +1317,7 @@ export default function ChatPage() {
                       .map((chapter, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm hover:bg-muted/60 text-foreground"
+                          className="flex items-center justify-between px-3 py-2 rounded-lg transition-all text-sm text-foreground"
                         >
                           <span className="text-[13px] truncate">{chapter?.title ?? ""}</span>
                           <i className="fas fa-chevron-right text-[10px] text-muted-foreground flex-shrink-0" />

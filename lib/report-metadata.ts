@@ -10,8 +10,9 @@ export type ReportDataFile = {
   mimeType?: string
 }
 
-/** 报告来源：system=本系统新建报告生成，uploaded=上传/导入的精选报告 */
-export type ReportSource = "system" | "uploaded"
+// ReportSource 统一从 lib/types.ts 导入
+import type { ReportSource } from "@/lib/types"
+export type { ReportSource }
 
 export type ReportMetadata = {
   reportId: string
@@ -54,6 +55,13 @@ export function toLanguageLabel(languageCode: string): string {
     fr: "Français",
     it: "Italiano",
     es: "Español",
+    nl: "Nederlands",
+    sv: "Svenska",
+    pl: "Polski",
+    pt: "Português",
+    ar: "العربية",
+    tr: "Türkçe",
+    ko: "한국어",
   }
   return map[languageCode] ?? languageCode
 }

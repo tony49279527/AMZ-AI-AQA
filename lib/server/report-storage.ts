@@ -30,7 +30,12 @@ export function isValidReportId(reportId: string): boolean {
   return REPORT_ID_REGEX.test(reportId)
 }
 
+function assertValidReportId(reportId: string): void {
+  if (!isValidReportId(reportId)) throw new Error(`Invalid reportId: ${reportId}`)
+}
+
 export function getReportFilePath(reportId: string): string {
+  assertValidReportId(reportId)
   return path.join(getReportsDir(), `report_${reportId}.md`)
 }
 
@@ -39,15 +44,18 @@ export function reportExists(reportId: string): boolean {
 }
 
 export function getReportMetaFilePath(reportId: string): string {
+  assertValidReportId(reportId)
   return path.join(getReportsDir(), `report_${reportId}.meta.json`)
 }
 
 /** 报告抓取来源存储（供数据源 Tab 展示与智能问答检索） */
 export function getReportSourcesFilePath(reportId: string): string {
+  assertValidReportId(reportId)
   return path.join(getReportsDir(), `report_${reportId}.sources.json`)
 }
 
 export function getReportUploadsDir(reportId: string): string {
+  assertValidReportId(reportId)
   return path.join(getReportsDir(), "uploads", reportId)
 }
 

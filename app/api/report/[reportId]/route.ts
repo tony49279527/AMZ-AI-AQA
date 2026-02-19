@@ -9,7 +9,7 @@ export async function GET(
     { params }: { params: Promise<{ reportId: string }> }
 ) {
     return withApiAudit(request, "report:detail", async ({ requestId }) => {
-        const guardError = enforceApiGuard(request, { route: "report:detail", maxRequests: 120, windowMs: 60_000, requestId })
+        const guardError = await enforceApiGuard(request, { route: "report:detail", maxRequests: 120, windowMs: 60_000, requestId })
         if (guardError) return guardError
 
         const { reportId } = await params

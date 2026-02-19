@@ -61,15 +61,12 @@ async function parseUploadedFileToText(file: File | null, noPlaceholder: string)
     const name = (file.name || "").toLowerCase()
     const buf = await file.arrayBuffer()
 
-    // Excel：.xlsx / .xls 用 xlsx 解析为文本
+    // Excel：.xlsx 用 read-excel-file 解析为文本（xlsx 库有 CVE 漏洞，已替换）
     if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
         try {
-            const XLSX = await import("xlsx")
-            const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: true })
-            const firstSheetName = wb.SheetNames[0]
-            if (!firstSheetName) return noPlaceholder
-            const sheet = wb.Sheets[firstSheetName]
-            const text = XLSX.utils.sheet_to_txt(sheet, { FS: "\t", RS: "\n" })
+            const readXlsxFile = (await import("read-excel-file/node")).default
+            const rows = await readXlsxFile(Buffer.from(buf))
+            const text = rows.map(row => row.map(cell => cell ?? "").join("\t")).join("\n")
             return (text && text.trim()) ? text.trim().slice(0, 500_000) : noPlaceholder
         } catch {
             return noPlaceholder
@@ -313,7 +310,7 @@ function buildSystemCollectedDataFiles(
 
 export async function POST(request: NextRequest) {
     return withApiAudit(request, "reports:generate", async ({ requestId }) => {
-        const guardError = enforceApiGuard(request, { route: "reports:generate", maxRequests: 12, windowMs: 60_000, requestId })
+        const guardError = await enforceApiGuard(request, { route: "reports:generate", maxRequests: 12, windowMs: 60_000, requestId })
         if (guardError) return guardError
 
         try {

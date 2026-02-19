@@ -9,7 +9,7 @@ import { ReportMetadata } from "@/lib/report-metadata"
 // 扫描 content/reports/ 目录，提取报告元数据
 export async function GET(request: NextRequest) {
     return withApiAudit(request, "reports:list", async ({ requestId }) => {
-        const guardError = enforceApiGuard(request, { route: "reports:list", maxRequests: 120, windowMs: 60_000, requestId })
+        const guardError = await enforceApiGuard(request, { route: "reports:list", maxRequests: 120, windowMs: 60_000, requestId })
         if (guardError) return guardError
 
         try {
@@ -43,9 +43,9 @@ export async function GET(request: NextRequest) {
 
                     if (!meta) {
                         let fd: number | null = null
+                        const buffer = Buffer.alloc(512)
                         try {
                             fd = fs.openSync(mdPath, "r")
-                            const buffer = Buffer.alloc(512)
                             fs.readSync(fd, buffer, 0, 512, 0)
                         } finally {
                             if (fd !== null) fs.closeSync(fd)
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
                         chapters: [],
                         summary: `${meta.marketplace ?? ""} | ${meta.language ?? ""} | ${meta.model ?? ""}`.trim() || "暂无摘要",
                         fileSize: stat.size || 0,
-                        archivedStatus: (meta.status === "archived" ? "archived" : "active") as const,
+                        archivedStatus: meta.status === "archived" ? "archived" as const : "active" as const,
                         archivedAt: meta.archivedAt,
                     }
                 } catch (e) {

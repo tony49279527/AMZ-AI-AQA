@@ -43,12 +43,16 @@ export default function NewReportPage() {
     }
   }, [logs.length])
 
-  // 页面卸载时取消正在进行的生成请求
   useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort()
-    }
+    return () => { abortControllerRef.current?.abort() }
   }, [])
+
+  useEffect(() => {
+    if (!isGenerating) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [isGenerating])
 
   // Form state
   const [coreAsins, setCoreAsins] = useState("")
@@ -82,16 +86,12 @@ export default function NewReportPage() {
   const handleFileUpload = useCallback((type: "returns" | "audience", event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const upload: FileUpload = {
-        file, preview: reader.result as string,
-        name: file.name, size: file.size, type: file.type,
-      }
-      if (type === "returns") setReturnsFile(upload)
-      else setAudienceFile(upload)
+    const upload: FileUpload = {
+      file, preview: "",
+      name: file.name, size: file.size, type: file.type,
     }
-    reader.readAsDataURL(file)
+    if (type === "returns") setReturnsFile(upload)
+    else setAudienceFile(upload)
   }, [])
 
   const canSubmit = coreAsins.trim() && competitorAsins.trim() && title.trim()
@@ -197,7 +197,7 @@ export default function NewReportPage() {
             case "complete":
               didComplete = true
               setProgress(100)
-              setCompletionData({ chapters: Array.isArray(data.chapters) ? data.chapters : [], elapsed: Number(data.elapsed) || 0 })
+              setCompletionData({ chapters: Array.isArray(data.chapters) ? data.chapters.length : (Number(data.totalChapters) || 0), elapsed: Number(data.elapsed) || 0 })
               addLog(`✅ 报告生成完成! 耗时 ${data.elapsed ?? 0} 秒`)
               setTimeout(() => {
                 abortControllerRef.current = null

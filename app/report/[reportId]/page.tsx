@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -30,22 +30,6 @@ function getQaIntroSeenKey(reportId: string): string {
   return `qa_intro_seen_${reportId}`
 }
 
-function getChatHistoryKey(reportId: string): string {
-  return `chat_history_${reportId}`
-}
-
-function hasChatHistory(reportId: string): boolean {
-  const raw = localStorage.getItem(getChatHistoryKey(reportId))
-  if (!raw) return false
-
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.length > 0 : false
-  } catch {
-    return false
-  }
-}
-
 /** 规范化报告 Markdown，减少模型输出导致的乱码与排版问题 */
 function normalizeReportMarkdown(raw: string): string {
   return raw
@@ -57,7 +41,15 @@ function normalizeReportMarkdown(raw: string): string {
     .trim()
 }
 
-export default function ReportDetailPage() {
+export default function ReportDetailPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground">加载中…</p></div>}>
+      <ReportDetailPage />
+    </Suspense>
+  )
+}
+
+function ReportDetailPage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -69,6 +61,7 @@ export default function ReportDetailPage() {
   const [activeTab, setActiveTab] = useState(initialTab)
 
   const [activeSection, setActiveSection] = useState("")
+  const [showMobileToc, setShowMobileToc] = useState(false)
   const [markdown, setMarkdown] = useState("")
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -94,9 +87,8 @@ export default function ReportDetailPage() {
     try {
       const introSeenKey = getQaIntroSeenKey(reportId)
       const introSeen = localStorage.getItem(introSeenKey) === "1"
-      const chattedBefore = hasChatHistory(reportId)
 
-      if (introSeen || chattedBefore) {
+      if (introSeen) {
         router.replace(`/chat/${reportId}`)
         return
       }
@@ -145,23 +137,34 @@ export default function ReportDetailPage() {
     return () => controller.abort()
   }, [reportId, retryCount])
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const sectionElements = sections.map((s) => document.getElementById(s.id))
-      const scrollPosition = window.scrollY + 200
+  const handleScrollThrottled = useCallback(() => {
+    const sectionElements = sections.map((s) => document.getElementById(s.id))
+    const scrollPosition = window.scrollY + 200
 
-      for (let i = sectionElements.length - 1; i >= 0; i--) {
-        const el = sectionElements[i]
-        if (el && el.offsetTop <= scrollPosition) {
-          setActiveSection(sections[i].id)
-          break
-        }
+    for (let i = sectionElements.length - 1; i >= 0; i--) {
+      const el = sectionElements[i]
+      if (el && el.offsetTop <= scrollPosition) {
+        setActiveSection(sections[i].id)
+        break
+      }
+    }
+  }, [sections])
+
+  useEffect(() => {
+    let ticking = false
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true
+        requestAnimationFrame(() => {
+          handleScrollThrottled()
+          ticking = false
+        })
       }
     }
 
-    window.addEventListener("scroll", handleScroll)
-    return () => window.removeEventListener("scroll", handleScroll)
-  }, [sections])
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [handleScrollThrottled])
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id)
@@ -444,6 +447,40 @@ export default function ReportDetailPage() {
         </div>
 
         <TabsContent value="report" className="focus-visible:outline-none focus-visible:ring-0 m-0 pt-[160px]">
+          {/* Mobile TOC toggle */}
+          {sections.length > 0 && (
+            <div className="lg:hidden fixed bottom-6 right-6 z-50 no-print">
+              <button
+                onClick={() => setShowMobileToc(!showMobileToc)}
+                className="w-12 h-12 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors"
+                title="目录"
+              >
+                <i className={`fas ${showMobileToc ? "fa-times" : "fa-list"} text-sm`} />
+              </button>
+              {showMobileToc && (
+                <div className="absolute bottom-14 right-0 w-64 max-h-[60vh] bg-white border border-slate-200 rounded-xl shadow-xl overflow-y-auto p-4">
+                  <div className="text-sm font-bold text-slate-700 mb-3">目录</div>
+                  <nav className="space-y-0.5">
+                    {sections.filter(s => s.level === 2).map((section) => (
+                      <button
+                        key={section.id}
+                        onClick={() => { scrollToSection(section.id); setShowMobileToc(false) }}
+                        className={cn(
+                          "w-full text-left text-sm py-1.5 px-2 rounded transition-all",
+                          activeSection === section.id
+                            ? "text-blue-600 bg-blue-50 font-medium"
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        {section.title}
+                      </button>
+                    ))}
+                  </nav>
+                </div>
+              )}
+            </div>
+          )}
+
           <main className="max-w-7xl mx-auto px-6 pb-24">
             <div className="bg-white rounded-2xl shadow-none border-none flex items-start gap-16 p-16">
               {/* Left Sidebar - Sticky TOC */}

@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthProvider } from "@/lib/auth-context"
-import { ThemeProvider } from "@/components/theme-provider"
+
 import { ErrorBoundary } from "@/components/error-boundary"
 import "./globals.css"
 
@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   title: "智能报告生成系统 | AI Report Generation",
   description: "多Agent报告生成与问答系统 - Multi-agent report generation and Q&A system",
   generator: "v0.app",
+  robots: { index: false, follow: false },
   icons: {
     icon: [
       {
@@ -41,17 +42,15 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="zh-CN">
       <head>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+        <link rel="stylesheet" href="/fa/all.min.css" />
       </head>
       <body
         className={`${inter.variable} font-sans antialiased bg-background text-foreground`}
       >
         <ErrorBoundary>
-          <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-            <AuthProvider>{children}</AuthProvider>
-          </ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
         </ErrorBoundary>
         <Analytics />
       </body>

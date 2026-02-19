@@ -1,16 +1,13 @@
-"use client"
-
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 export default function HomePage() {
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       {/* Background gradient effect */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative max-w-3xl w-full text-center">

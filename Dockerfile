@@ -2,7 +2,7 @@
 # 构建：docker build -t report-system .
 # 本地跑：docker run -p 3000:3000 -e API_ACCESS_TOKEN=xxx report-system
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 
 FROM base AS deps

@@ -15,7 +15,10 @@ type AuditContext = {
 
 export function getOrCreateRequestId(request: NextRequest): string {
   const incoming = request.headers.get("x-request-id")?.trim()
-  if (incoming) return incoming.slice(0, 128)
+  if (incoming) {
+    const sanitized = incoming.replace(/[^\w\-.:]/g, "").slice(0, 128)
+    return sanitized || randomUUID()
+  }
   return randomUUID()
 }
 
