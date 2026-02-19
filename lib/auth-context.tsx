@@ -34,19 +34,21 @@ async function hashPassword(salt: string, password: string): Promise<string> {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === "undefined") return null
-
-    const storedUser = localStorage.getItem(CURRENT_USER_KEY)
-    if (!storedUser) return null
-
     try {
+      if (typeof window === "undefined") return null
+      const storedUser = localStorage.getItem(CURRENT_USER_KEY)
+      if (!storedUser) return null
       const parsed = JSON.parse(storedUser)
       return {
         ...parsed,
-        createdAt: new Date(parsed.createdAt),
+        createdAt: parsed?.createdAt ? new Date(parsed.createdAt) : new Date(),
       }
     } catch {
-      localStorage.removeItem(CURRENT_USER_KEY)
+      try {
+        if (typeof window !== "undefined") localStorage.removeItem(CURRENT_USER_KEY)
+      } catch {
+        // ignore
+      }
       return null
     }
   })
@@ -64,7 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const saveUsers = (users: Record<string, StoredUserRecord>) => {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
+    try {
+      if (typeof window !== "undefined") localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
+    } catch {
+      // ignore storage errors (e.g. quota, private mode)
+    }
   }
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
@@ -98,7 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setUser(loggedInUser)
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(loggedInUser))
+    try {
+      if (typeof window !== "undefined") localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(loggedInUser))
+    } catch {
+      // ignore
+    }
 
     // 旧数据迁移：若之前存的是明文，登录成功后改为哈希存储
     if ("password" in userRecord && userRecord.password !== undefined) {
@@ -139,14 +149,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     saveUsers(users)
     setUser(newUser)
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser))
+    try {
+      if (typeof window !== "undefined") localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser))
+    } catch {
+      // ignore
+    }
 
     return { success: true }
   }
 
   const logout = () => {
     setUser(null)
-    localStorage.removeItem(CURRENT_USER_KEY)
+    try {
+      if (typeof window !== "undefined") localStorage.removeItem(CURRENT_USER_KEY)
+    } catch {
+      // ignore
+    }
   }
 
   return <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>{children}</AuthContext.Provider>

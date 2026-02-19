@@ -52,5 +52,7 @@ export interface ChatMessage {
   content: string
   timestamp: Date
   sources?: string[]
+  /** 图片生成模式下，助手回复的图片 data URL 列表 */
+  images?: string[]
   reportId?: string
 }

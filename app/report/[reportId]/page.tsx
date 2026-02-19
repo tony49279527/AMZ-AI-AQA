@@ -40,9 +40,9 @@ function hasChatHistory(reportId: string): boolean {
 
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.length > 0 : true
+    return Array.isArray(parsed) ? parsed.length > 0 : false
   } catch {
-    return true
+    return false
   }
 }
 
@@ -63,8 +63,9 @@ export default function ReportDetailPage() {
   const searchParams = useSearchParams()
   const reportId = params.reportId as string
 
-  // Initialize activeTab from URL query param or default to "report"
-  const initialTab = searchParams.get("tab") || "report"
+  // Initialize activeTab from URL query param or default to "report"（已移除「图片生成」Tab，归一化无效值）
+  const rawTab = searchParams.get("tab") || "report"
+  const initialTab = rawTab === "report" || rawTab === "qa" || rawTab === "sources" ? rawTab : "report"
   const [activeTab, setActiveTab] = useState(initialTab)
 
   const [activeSection, setActiveSection] = useState("")
@@ -76,66 +77,72 @@ export default function ReportDetailPage() {
   // 动态从 Markdown 提取目录章节 (提取 ## 和 ### 级别的标题)
   const [sections, setSections] = useState<{ id: string; title: string; level: number }[]>([])
 
-  // Update activeTab if URL changes (e.g. back/forward navigation)
+  // Update activeTab if URL changes (e.g. back/forward navigation)；无效 tab=image 时同步更新 URL
   useEffect(() => {
     const tab = searchParams.get("tab")
-    if (tab) {
+    if (tab && (tab === "report" || tab === "qa" || tab === "sources")) {
       setActiveTab(tab)
+    } else if (tab === "image") {
+      setActiveTab("report")
+      router.replace(`/report/${reportId}?tab=report`, { scroll: false })
     }
-  }, [searchParams])
+  }, [searchParams, reportId, router])
 
   useEffect(() => {
     if (activeTab !== "qa") return
 
-    const introSeenKey = getQaIntroSeenKey(reportId)
-    const introSeen = localStorage.getItem(introSeenKey) === "1"
-    const chattedBefore = hasChatHistory(reportId)
+    try {
+      const introSeenKey = getQaIntroSeenKey(reportId)
+      const introSeen = localStorage.getItem(introSeenKey) === "1"
+      const chattedBefore = hasChatHistory(reportId)
 
-    if (introSeen || chattedBefore) {
-      router.replace(`/chat/${reportId}`)
-      return
+      if (introSeen || chattedBefore) {
+        router.replace(`/chat/${reportId}`)
+        return
+      }
+
+      localStorage.setItem(introSeenKey, "1")
+    } catch {
+      // 无痕等环境下 localStorage 可能不可用，不跳转、不写入
     }
-
-    localStorage.setItem(introSeenKey, "1")
   }, [activeTab, reportId, router])
 
   useEffect(() => {
+    const controller = new AbortController()
     async function fetchReport() {
       setLoadError(null)
       try {
         const response = await fetch(`/api/report/${reportId}`, {
           headers: buildClientApiHeaders(),
+          signal: controller.signal,
         })
         if (response.ok) {
           const rawText = await response.text()
           const text = normalizeReportMarkdown(rawText)
           setMarkdown(text)
 
-          // 提取目录 (## 为 level 2, ### 为 level 3)
           const extractedSections = text
             .split("\n")
             .filter((line) => line.startsWith("## ") || line.startsWith("### "))
             .map((line, index) => {
               const isSubSection = line.startsWith("### ")
               const title = line.replace(/^#{2,3} /, "").trim()
-              return {
-                id: `section-${index + 1}`,
-                title: title,
-                level: isSubSection ? 3 : 2
-              }
+              return { id: `section-${index + 1}`, title, level: isSubSection ? 3 : 2 }
             })
           setSections(extractedSections)
         } else {
           setLoadError(`加载失败 (HTTP ${response.status})，请稍后重试`)
         }
       } catch (error) {
+        if (controller.signal.aborted) return
         setLoadError(error instanceof Error ? error.message : "加载报告时出错，请稍后重试")
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     }
 
     fetchReport()
+    return () => controller.abort()
   }, [reportId, retryCount])
 
   useEffect(() => {
@@ -177,48 +184,53 @@ export default function ReportDetailPage() {
   const [activeFileActionId, setActiveFileActionId] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     async function fetchReportMetadata() {
       try {
         const response = await fetch(`/api/report-meta/${reportId}`, {
           headers: buildClientApiHeaders(),
+          signal: controller.signal,
         })
-
         if (!response.ok) return
-        const metadata = (await response.json()) as ReportMetadata
+        const metadata = (await response.json()) as ReportMetadata | null
+        if (!metadata) return
 
         setReportConfig({
-          coreAsins: metadata.coreAsins,
-          competitorAsins: metadata.competitorAsins,
-          marketplace: metadata.marketplace,
-          language: metadata.language,
-          model: metadata.model,
-          websiteCount: metadata.websiteCount,
-          youtubeCount: metadata.youtubeCount,
-          title: metadata.title,
-          createdAt: metadata.createdAt,
-          possiblyTruncated: metadata.possiblyTruncated,
+          coreAsins: metadata.coreAsins ?? [],
+          competitorAsins: metadata.competitorAsins ?? [],
+          marketplace: metadata.marketplace ?? "",
+          language: metadata.language ?? "",
+          model: metadata.model ?? "",
+          websiteCount: metadata.websiteCount ?? 0,
+          youtubeCount: metadata.youtubeCount ?? 0,
+          title: metadata.title ?? "",
+          createdAt: metadata.createdAt ?? "",
+          possiblyTruncated: metadata.possiblyTruncated ?? false,
         })
-        setDataFiles(metadata.dataFiles || [])
+        setDataFiles(Array.isArray(metadata.dataFiles) ? metadata.dataFiles : [])
       } catch (error) {
-        console.error("Failed to load report metadata:", error)
+        if (!controller.signal.aborted) console.error("Failed to load report metadata:", error)
       }
     }
 
     fetchReportMetadata()
+    return () => controller.abort()
   }, [reportId])
 
   useEffect(() => {
+    const controller = new AbortController()
     async function fetchReportSources() {
       try {
-        const res = await fetch(`/api/report-sources/${reportId}`, { headers: buildClientApiHeaders() })
+        const res = await fetch(`/api/report-sources/${reportId}`, { headers: buildClientApiHeaders(), signal: controller.signal })
         if (!res.ok) return
         const data = (await res.json()) as { items?: ReportSourceListItem[] }
         setReportSources(Array.isArray(data.items) ? data.items : [])
       } catch {
-        setReportSources([])
+        if (!controller.signal.aborted) setReportSources([])
       }
     }
     fetchReportSources()
+    return () => controller.abort()
   }, [reportId])
 
   const persistDataFiles = async (nextFiles: ReportDataFile[]): Promise<boolean> => {
@@ -236,8 +248,8 @@ export default function ReportDetailPage() {
         throw await buildClientApiError(response, `HTTP ${response.status}`)
       }
 
-      const updated = (await response.json()) as ReportMetadata
-      setDataFiles(updated.dataFiles || [])
+      const updated = (await response.json()) as ReportMetadata | null
+      setDataFiles(updated && Array.isArray(updated.dataFiles) ? updated.dataFiles : [])
       return true
     } catch (error) {
       console.error("Failed to sync data files:", error)
@@ -264,8 +276,8 @@ export default function ReportDetailPage() {
       throw await buildClientApiError(response, `HTTP ${response.status}`)
     }
 
-    const payload = (await response.json()) as { files?: ReportDataFile[] }
-    return payload.files || []
+    const payload = (await response.json()) as { files?: ReportDataFile[] } | null
+    return Array.isArray(payload?.files) ? payload.files : []
   }
 
   const deleteFileFromServer = async (storagePath: string): Promise<void> => {
@@ -394,10 +406,6 @@ export default function ReportDetailPage() {
     const nextFiles = dataFiles.filter((f) => f.id !== fileId)
     await persistDataFiles(nextFiles)
   }
-
-
-
-
 
   return (
     <div className="min-h-screen bg-slate-50">

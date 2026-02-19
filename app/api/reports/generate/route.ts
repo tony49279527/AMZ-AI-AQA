@@ -55,10 +55,28 @@ async function fetchWithRetry(
     throw new Error("fetchWithRetry: exhausted all retries")
 }
 
-/** 上传文件解析为纯文本（TXT/CSV），失败或空则返回占位符 */
+/** 上传文件解析为纯文本（TXT / CSV / Excel），失败或空则返回占位符 */
 async function parseUploadedFileToText(file: File | null, noPlaceholder: string): Promise<string> {
     if (!file || file.size === 0) return noPlaceholder
+    const name = (file.name || "").toLowerCase()
     const buf = await file.arrayBuffer()
+
+    // Excel：.xlsx / .xls 用 xlsx 解析为文本
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+        try {
+            const XLSX = await import("xlsx")
+            const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: true })
+            const firstSheetName = wb.SheetNames[0]
+            if (!firstSheetName) return noPlaceholder
+            const sheet = wb.Sheets[firstSheetName]
+            const text = XLSX.utils.sheet_to_txt(sheet, { FS: "\t", RS: "\n" })
+            return (text && text.trim()) ? text.trim().slice(0, 500_000) : noPlaceholder
+        } catch {
+            return noPlaceholder
+        }
+    }
+
+    // TXT / CSV：按文本解码
     let raw: string
     try {
         raw = new TextDecoder("utf-8").decode(buf)
@@ -67,7 +85,7 @@ async function parseUploadedFileToText(file: File | null, noPlaceholder: string)
     }
     const trimmed = raw.trim()
     if (!trimmed) return noPlaceholder
-    const name = (file.name || "").toLowerCase()
+
     if (name.endsWith(".csv")) {
         const lines = trimmed.split(/\r?\n/).filter((l) => l.trim())
         const text = lines
@@ -78,7 +96,8 @@ async function parseUploadedFileToText(file: File | null, noPlaceholder: string)
             .join("\n")
         return text || noPlaceholder
     }
-    return trimmed
+
+    return trimmed.slice(0, 500_000)
 }
 
 const SYSTEM_PROMPT = `你是一位顶级的市场分析专家，尤其擅长亚马逊等电商平台的深度竞品分析。你的任务是基于提供的多维度信息（产品信息、用户评论、参考网站内容、YouTube 视频内容），为主产品撰写一份全面、深入、结构清晰且数据驱动的竞品分析报告。
@@ -169,7 +188,7 @@ function buildUserPrompt(params: {
     personaReportText: string
     customPrompt: string
 }): string {
-    const t = `请基于以下提供的【混合数据源】，并根据指定的【主产品 ASIN】和【竞品 ASIN 列表】，撰写一份详细的竞品分析报告。报告需要严格按照指定的框架进行，并且总字数不少于 5000 个中文或者要求的其他语言。
+    const t = `请基于以下提供的【混合数据源】，并根据指定的【主产品 ASIN】和【竞品 ASIN 列表】，撰写一份详细的竞品分析报告。报告需要严格按照指定的框架进行，并且总字数不少于 5000 字，可根据内容需要写 8000-15000 字（或要求的其他语言等价长度）。
 
 **重要指令 - 如何处理混合数据:**
 
@@ -230,7 +249,7 @@ ${params.personaReportText}
 
 **再次强调:**
 * 如果退货报告或人群报告的内容为占位字符串（如 "NO_RETURN_REPORT" 或 "NO_PERSONA_REPORT"），请视为该数据源不存在，正常完成其它部分分析，不要报错或反复追问。
-* 报告必须深入、详细，总字数不少于 6000 汉字。
+* 报告必须深入、详细，总字数不少于 5000 汉字，建议 8000-15000 字，长报告请完整输出不要截断。
 * 核心挑战在于从混合的 \`Products Info\` 和 \`Products Reviews\` 文本中准确分离出属于主产品和各竞品的信息。请尽力完成此任务，并在报告中清晰标注信息来源（主品 / 各竞品 ASIN），输出排版美观、结构清晰，并合理使用表格的竞品分析报告。
 * 报告语言要求是中文和 ${params.reportLanguage}`
     return t

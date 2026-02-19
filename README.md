@@ -27,12 +27,10 @@ NEXT_PUBLIC_SUPPORT_EMAIL=support@your-domain.com
 RAPIDAPI_KEY=your-rapidapi-key
 RAPIDAPI_AMAZON_HOST=real-time-amazon-data.p.rapidapi.com
 RAPIDAPI_AMAZON_PATH=product-details
-# ScrapingBee：抓取参考网页正文（由系统根据产品关键词搜索到的链接）
+# ScrapingBee：一个 key 全搞定（Google 搜索找参考站 + 网页抓取 + YouTube 搜索 & 字幕）
 SCRAPINGBEE_API_KEY=your-scrapingbee-api-key
-# Serper：根据产品关键词搜索参考网站链接（不填则无参考网站）
-SERPER_API_KEY=your-serper-key
-# Google/YouTube：根据产品关键词搜索 YouTube 视频并抓取字幕（不填则无 YouTube 参考）
-GOOGLE_API_KEY=your-google-api-key
+# Serper：可选，与 ScrapingBee 二选一即可（用于找参考网站链接）
+# SERPER_API_KEY=your-serper-key
 ```
 
 说明：

@@ -16,8 +16,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files（保留 .env.example 供拉取后复制）
 .env*
+!.env.example
 
 # vercel
 .vercel

@@ -171,28 +171,27 @@ export default function NewReportPage() {
         if (!trimmed.startsWith("data: ") || !eventType) return
 
         try {
-          const data = JSON.parse(trimmed.slice(6))
+          const data = JSON.parse(trimmed.slice(6)) as Record<string, unknown> | null
+          if (data == null) return
 
           switch (eventType) {
             case "init":
-              setReportId(data.reportId)
-              if (data.chapters) {
-                setDynamicChapters(data.chapters)
-              }
-              addLog(data.totalChapters === 1 ? `报告 ID: ${data.reportId}，正在生成…` : `报告 ID: ${data.reportId}，共 ${data.totalChapters} 个章节`)
+              if (typeof data.reportId === "string") setReportId(data.reportId)
+              if (Array.isArray(data.chapters)) setDynamicChapters(data.chapters)
+              addLog((data.totalChapters as number) === 1 ? `报告 ID: ${data.reportId}，正在生成…` : `报告 ID: ${data.reportId}，共 ${data.totalChapters ?? 0} 个章节`)
               break
             case "progress":
-              setProgress(data.overallProgress)
-              setChapterStatuses(prev => ({ ...prev, [data.chapter]: data.status }))
+              if (typeof data.overallProgress === "number") setProgress(data.overallProgress)
+              if (data.chapter != null) setChapterStatuses(prev => ({ ...prev, [String(data.chapter)]: String(data.status ?? "") }))
               break
             case "log":
-              addLog(data.message, data.error)
+              addLog(String(data.message ?? ""), Boolean(data.error))
               break
             case "complete":
               didComplete = true
               setProgress(100)
-              setCompletionData({ chapters: data.chapters, elapsed: data.elapsed })
-              addLog(`✅ 报告生成完成! 耗时 ${data.elapsed} 秒`)
+              setCompletionData({ chapters: Array.isArray(data.chapters) ? data.chapters : [], elapsed: Number(data.elapsed) || 0 })
+              addLog(`✅ 报告生成完成! 耗时 ${data.elapsed ?? 0} 秒`)
               setTimeout(() => {
                 abortControllerRef.current = null
                 setIsGenerating(false)
@@ -200,7 +199,7 @@ export default function NewReportPage() {
               }, 1000)
               break
             case "error":
-              addLog(data.message ?? "生成出错", true)
+              addLog(String(data.message ?? "生成出错"), true)
               if (data.message === "已取消") {
                 abortControllerRef.current = null
                 setIsGenerating(false)
@@ -502,7 +501,7 @@ export default function NewReportPage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1.5">
-                    长报告（6000 字以上）建议选用 Gemini、GPT-5.2、DeepSeek 等支持更长输出的模型，避免报告被截断。
+                    长报告（8000–15000 字）建议选用支持更长输出的模型，系统已按 128k 输出上限请求，具体以模型能力为准。
                   </p>
                 </div>
               </div>
@@ -566,7 +565,7 @@ export default function NewReportPage() {
                     className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-all cursor-pointer bg-secondary/30"
                     onClick={() => document.getElementById("returns-file")?.click()}
                   >
-                    <input id="returns-file" type="file" className="hidden" accept=".csv,.xlsx" onChange={(e) => handleFileUpload("returns", e)} />
+                    <input id="returns-file" type="file" className="hidden" accept=".csv,.txt,.xlsx,.xls" onChange={(e) => handleFileUpload("returns", e)} />
                     {returnsFile ? (
                       <div>
                         <i className="fas fa-file-check text-3xl text-primary mb-2"></i>
@@ -577,7 +576,7 @@ export default function NewReportPage() {
                       <div>
                         <i className="fas fa-cloud-arrow-up text-3xl text-muted-foreground mb-2"></i>
                         <p className="font-semibold text-sm mb-1">点击上传文件</p>
-                        <p className="text-xs text-muted-foreground">支持 CSV, XLSX</p>
+                        <p className="text-xs text-muted-foreground">支持 CSV、TXT、Excel (.xlsx/.xls)</p>
                       </div>
                     )}
                   </div>
@@ -590,7 +589,7 @@ export default function NewReportPage() {
                     className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-all cursor-pointer bg-secondary/30"
                     onClick={() => document.getElementById("audience-file")?.click()}
                   >
-                    <input id="audience-file" type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={(e) => handleFileUpload("audience", e)} />
+                    <input id="audience-file" type="file" className="hidden" accept=".csv,.txt,.xlsx,.xls" onChange={(e) => handleFileUpload("audience", e)} />
                     {audienceFile ? (
                       <div>
                         <i className="fas fa-file-check text-3xl text-primary mb-2"></i>
@@ -601,7 +600,7 @@ export default function NewReportPage() {
                       <div>
                         <i className="fas fa-cloud-arrow-up text-3xl text-muted-foreground mb-2"></i>
                         <p className="font-semibold text-sm mb-1">点击上传文件</p>
-                        <p className="text-xs text-muted-foreground">支持 PDF, DOC, DOCX</p>
+                        <p className="text-xs text-muted-foreground">支持 CSV、TXT、Excel (.xlsx/.xls)</p>
                       </div>
                     )}
                   </div>

@@ -105,32 +105,35 @@ function mergeSettings(partial: Partial<AppSettings>): AppSettings {
 export default function SettingsPage() {
   // 从 localStorage 加载设置（如果存在）
   const [settings, setSettings] = useState<AppSettings>(() => {
-    if (typeof window !== "undefined") {
+    try {
+      if (typeof window === "undefined") return defaultSettings
       const stored = localStorage.getItem("app_settings")
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as Partial<AppSettings>
-          return mergeSettings(parsed)
-        } catch {
-          return defaultSettings
-        }
-      }
+      if (!stored) return defaultSettings
+      const parsed = JSON.parse(stored) as Partial<AppSettings>
+      return mergeSettings(parsed ?? {})
+    } catch {
+      return defaultSettings
     }
-    return defaultSettings
   })
 
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
-    localStorage.setItem("app_settings", JSON.stringify(settings))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    try {
+      if (typeof window !== "undefined") localStorage.setItem("app_settings", JSON.stringify(settings))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      console.warn("Failed to save settings to localStorage")
+    }
   }
 
   const handleReset = () => {
     setSettings(defaultSettings)
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("app_settings")
+    try {
+      if (typeof window !== "undefined") localStorage.removeItem("app_settings")
+    } catch {
+      // ignore
     }
   }
 
@@ -146,7 +149,7 @@ export default function SettingsPage() {
           </h1>
           <p className="text-xl text-muted-foreground">System Settings & Configuration</p>
           <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-            <strong>说明：</strong>本页设置仅部分影响后端。报告生成与问答使用的 API Key 来自服务端环境变量（OPENROUTER_API_KEY），请勿在此填写真实密钥。Agent 开关会控制新建报告时生成哪些章节；LLM 默认模型会用于新建报告与智能问答。
+            <strong>说明：</strong>本页设置仅部分影响后端。报告生成与智能问答使用的 API Key 由服务端环境变量 <code className="bg-amber-100 px-1 rounded">OPENROUTER_API_KEY</code> 提供，请在项目根目录 <code className="bg-amber-100 px-1 rounded">.env</code> 或部署环境变量中配置，请勿在界面中填写。Agent 开关会控制新建报告时生成哪些章节；LLM 默认模型会用于新建报告与智能问答。
           </div>
         </div>
 
@@ -262,7 +265,7 @@ export default function SettingsPage() {
                     type="number"
                     value={settings.llm.maxTokens}
                     onChange={(e) =>
-                      setSettings({ ...settings, llm: { ...settings.llm, maxTokens: Number.parseInt(e.target.value) } })
+                      setSettings({ ...settings, llm: { ...settings.llm, maxTokens: Number.parseInt(e.target.value) || 4096 } })
                     }
                     className="bg-secondary/50"
                   />

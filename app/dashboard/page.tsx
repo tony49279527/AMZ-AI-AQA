@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Navigation } from "@/components/navigation"
 import { Button } from "@/components/ui/button"
 import {
@@ -19,8 +19,6 @@ import { buildClientApiError, formatClientErrorMessage } from "@/lib/client-api-
 type TabId = "all" | "mine" | "featured"
 type ViewMode = "grid" | "list"
 type SortOption = "recent" | "oldest" | "name-asc" | "name-desc"
-type ReportStatus = "active" | "archived"
-
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "recent", label: "最近更新" },
   { value: "oldest", label: "最早创建" },
@@ -39,8 +37,10 @@ const reportTheme = {
   hoverShadow: "hover:shadow-md",
 }
 
-function formatReportDate(d: Date) {
+function formatReportDate(d: Date | string | undefined) {
+  if (d == null) return "—"
   const date = new Date(d)
+  if (Number.isNaN(date.getTime())) return "—"
   const y = date.getFullYear()
   const m = date.getMonth() + 1
   const day = date.getDate()
@@ -59,6 +59,8 @@ export default function DashboardPage() {
 
   const [recentReports, setRecentReports] = useState<Report[]>([])
   const [loadError, setLoadError] = useState("")
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   // 从 API 加载真实报告列表
   useEffect(() => {
@@ -72,12 +74,13 @@ export default function DashboardPage() {
         }
 
         const data = await response.json()
+        const rawList = Array.isArray(data?.reports) ? data.reports : []
         setRecentReports(
-          data.reports.map((r: Record<string, unknown>) => ({
+          rawList.map((r: Record<string, unknown>) => ({
             ...r,
             createdAt: new Date(r.createdAt as string),
             updatedAt: new Date(r.updatedAt as string),
-            archivedStatus: (r.archivedStatus ?? "active") as ReportStatus,
+            archivedStatus: r.archivedStatus,
             source: r.source === "uploaded" ? "uploaded" : "system",
           }))
         )
@@ -91,79 +94,48 @@ export default function DashboardPage() {
     loadReports()
   }, [])
 
-  // 存档报告
-  const archiveReport = async (reportId: string, action: "archive" | "restore") => {
-    try {
-      const response = await fetch(`/api/report-meta/${reportId}`, {
-        method: "DELETE",
-        headers: buildClientApiHeaders(),
-        body: JSON.stringify({ action }),
-      })
-
-      if (!response.ok) {
-        throw await buildClientApiError(response, `操作失败 (HTTP ${response.status})`)
-      }
-
-      // 刷新报告列表
-      setRecentReports(prev => prev.map(r =>
-        r.id === reportId
-          ? { ...r, archivedStatus: action === "archive" ? "archived" : "active" }
-          : r
-      ))
-    } catch (error) {
-      console.error("Failed to update report status:", error)
-      alert(formatClientErrorMessage(error, "操作失败，请稍后重试"))
-    }
-  }
-
   const tabs: { id: TabId; label: string }[] = [
     { id: "all", label: "全部" },
     { id: "mine", label: "我的报告" },
     { id: "featured", label: "精选报告" },
   ]
 
-  // 精选报告 = 上传/导入的，仅出现在精选；我的报告 = 本系统生成的，仅出现在我的报告
-  const featuredReports = recentReports.filter(r => r.source === "uploaded" && r.archivedStatus !== "archived")
-  const myReports = recentReports.filter(r => r.source === "system" && r.archivedStatus !== "archived")
+  const featuredReports = useMemo(() => (recentReports ?? []).filter(r => r.source === "uploaded"), [recentReports])
+  const myReports = useMemo(() => (recentReports ?? []).filter(r => r.source === "system"), [recentReports])
 
-  const filteredReports =
-    activeTab === "mine"
-      ? myReports
-      : activeTab === "featured"
-        ? featuredReports
-        : recentReports
-
-  // 精选报告：在「全部」页只展示前 4 条，点「查看全部精选」进 Tab 后展示全部
-  const sortedFeaturedReports = [...featuredReports].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  const displayedFeaturedReports = activeTab === "all" ? sortedFeaturedReports.slice(0, 4) : sortedFeaturedReports
-
-  const sortFn = (a: Report, b: Report) => {
+  const sortFn = useMemo(() => (a: Report, b: Report) => {
+    const aTitle = a?.title ?? ""
+    const bTitle = b?.title ?? ""
+    const aUpdated = new Date(a?.updatedAt ?? 0).getTime()
+    const bUpdated = new Date(b?.updatedAt ?? 0).getTime()
+    const aCreated = new Date(a?.createdAt ?? 0).getTime()
+    const bCreated = new Date(b?.createdAt ?? 0).getTime()
     switch (sortBy) {
-      case "recent":
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      case "oldest":
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      case "name-asc":
-        return a.title.localeCompare(b.title, "zh-CN")
-      case "name-desc":
-        return b.title.localeCompare(a.title, "zh-CN")
-      default:
-        return 0
+      case "recent": return bUpdated - aUpdated
+      case "oldest": return aCreated - bCreated
+      case "name-asc": return aTitle.localeCompare(bTitle, "zh-CN")
+      case "name-desc": return bTitle.localeCompare(aTitle, "zh-CN")
+      default: return 0
     }
-  }
-  const sortedReports = [...filteredReports].sort(sortFn)
-  const sortedMyReports = [...myReports].sort(sortFn)
+  }, [sortBy])
+
+  const displayedFeaturedReports = useMemo(() => {
+    const sorted = [...featuredReports].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    return activeTab === "all" ? sorted.slice(0, 4) : sorted
+  }, [featuredReports, activeTab])
+
+  const sortedMyReports = useMemo(() => [...myReports].sort(sortFn), [myReports, sortFn])
 
   // 渲染统一的报告卡片
   const renderReportCard = (report: Report, showBadge: boolean = false) => {
-    const isArchived = report.archivedStatus === "archived"
+    const id = report?.id ?? ""
 
     return (
-      <div key={report.id} className="group relative">
-        <Link href={`/report/${report.id}`}>
+      <div key={id} className="group relative">
+        <Link href={id ? `/report/${id}` : "/dashboard"}>
           <div className={cn(
             "h-[220px] flex flex-col rounded-2xl border transition-all duration-300 p-5 group-hover:-translate-y-1",
-            isArchived ? "opacity-60 bg-slate-50" : reportTheme.bg,
+            reportTheme.bg,
             reportTheme.border,
             reportTheme.hoverBorder,
             reportTheme.hoverShadow
@@ -172,17 +144,12 @@ export default function DashboardPage() {
               <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
                 <i className={cn("fas fa-file-lines text-lg transition-colors", reportTheme.iconText)} />
               </div>
-              {isArchived && (
-                <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
-                  已存档
-                </span>
-              )}
-              {showBadge && !isArchived && (
+              {showBadge && (
                 <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-semibold border border-blue-100">
                   精选
                 </span>
               )}
-              {!showBadge && !isArchived && report.status === "processing" && (
+              {!showBadge && report.status === "processing" && (
                 <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
                   {report.progress}%
@@ -191,25 +158,25 @@ export default function DashboardPage() {
             </div>
 
             <h3 className="font-semibold text-base leading-snug text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors mb-auto">
-              {report.title}
+              {report?.title ?? "未命名报告"}
             </h3>
 
             <div className="flex-shrink-0 pt-4 border-t border-slate-50 mt-4">
               <div className="flex items-center gap-3 text-xs text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <i className="far fa-clock" />
-                  <span>{formatReportDate(report.updatedAt)}</span>
+                  <span>{formatReportDate(report?.updatedAt)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <i className="fas fa-list-ul" />
                   <span>{getChapterCount(report)} 章节</span>
                 </div>
 
-                {report.status === "processing" && (
+                {report?.status === "processing" && (
                   <div className="ml-auto w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                      style={{ width: `${report.progress}%` }}
+                      style={{ width: `${report?.progress ?? 0}%` }}
                     />
                   </div>
                 )}
@@ -217,24 +184,6 @@ export default function DashboardPage() {
             </div>
           </div>
         </Link>
-
-        {/* 悬停时显示的操作按钮 */}
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => {
-              e.preventDefault()
-              archiveReport(report.id, isArchived ? "restore" : "archive")
-            }}
-            className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:border-red-300 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm"
-            title={isArchived ? "恢复报告" : "存档报告"}
-            aria-label={isArchived ? "恢复报告" : "存档报告"}
-          >
-            <i className={cn(
-              "text-xs transition-colors",
-              isArchived ? "fas fa-undo text-slate-500" : "fas fa-archive text-slate-500 hover:text-red-600"
-            )} />
-          </button>
-        </div>
       </div>
     )
   }
@@ -245,6 +194,12 @@ export default function DashboardPage() {
 
       <main className="pt-24 pb-16">
         <div className="max-w-[1280px] mx-auto px-6">
+          {/* 端口提示：地址栏必须和终端 Local 一致，否则报告列表来自别的进程 */}
+          {mounted && (
+            <p className="mb-4 text-xs text-slate-500 bg-amber-50/80 border border-amber-200/80 rounded-lg px-3 py-2">
+              当前地址：<strong>{window.location.origin}</strong> — 请与终端里显示的 <strong>Local</strong> 一致（例如 3000 或 3001），端口不对会导致报告数量不对。
+            </p>
+          )}
           {/* 筛选与操作栏 */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200 shadow-sm w-fit">
@@ -351,14 +306,14 @@ export default function DashboardPage() {
                     <span className="w-1 h-6 bg-blue-600 rounded-full inline-block"></span>
                     精选报告案例
                     {activeTab === "featured" && (
-                      <span className="ml-1 text-sm text-slate-400 font-normal bg-slate-100 px-2 py-0.5 rounded-full">{featuredOnly.length}</span>
+                      <span className="ml-1 text-sm text-slate-400 font-normal bg-slate-100 px-2 py-0.5 rounded-full">{featuredReports.length}</span>
                     )}
                   </h2>
                   <p className="text-sm text-slate-500 ml-3">
                     {activeTab === "featured" ? "系统为您推荐的深度市场分析案例" : "查看优质案例，了解AI报告生成的强大能力"}
                   </p>
                 </div>
-                {activeTab === "all" && featuredOnly.length > 4 && (
+                {activeTab === "all" && featuredReports.length > 4 && (
                   <button
                     type="button"
                     onClick={() => setActiveTab("featured")}
@@ -384,16 +339,17 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-3">
                   {displayedFeaturedReports.map((report) => {
+                    const rid = report?.id ?? ""
                     return (
-                      <Link key={report.id} href={`/report/${report.id}`} className="block group">
+                      <Link key={rid || "f"} href={rid ? `/report/${rid}` : "/dashboard"} className="block group">
                         <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
                           <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
                             <i className={cn("fas fa-file-lines", reportTheme.iconText)} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">{report.title}</h3>
+                            <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">{report?.title ?? "未命名"}</h3>
                             <div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
-                              <span>{formatReportDate(report.updatedAt)}</span>
+                              <span>{formatReportDate(report?.updatedAt)}</span>
                               <span>{getChapterCount(report)} 章节</span>
                             </div>
                           </div>
@@ -468,19 +424,21 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </Link>
-                  {sortedMyReports.map((report) => (
-                    <Link key={report.id} href={`/report/${report.id}`} className="block group">
+                  {sortedMyReports.map((report) => {
+                    const rid = report?.id ?? ""
+                    return (
+                    <Link key={rid || "m"} href={rid ? `/report/${rid}` : "/dashboard"} className="block group">
                       <div className="flex items-center gap-5 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 group-hover:bg-blue-50/10">
                         <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors group-hover:bg-blue-100", reportTheme.iconBg)}>
                           <i className={cn("fas fa-file-alt", reportTheme.iconText)} />
                         </div>
                         <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
                           <div className="col-span-12 md:col-span-6">
-                            <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">{report.title}</h3>
+                            <h3 className="font-semibold text-sm text-slate-800 truncate group-hover:text-blue-600 transition-colors">{report?.title ?? "未命名"}</h3>
                           </div>
                           <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
                             <i className="far fa-clock" />
-                            {formatReportDate(report.updatedAt)}
+                            {formatReportDate(report?.updatedAt)}
                           </div>
                           <div className="col-span-6 md:col-span-3 text-xs text-slate-400 flex items-center gap-2">
                             <i className="fas fa-list-ul" />
@@ -488,13 +446,13 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <div className="flex-shrink-0 ml-4">
-                          {report.status === "completed" ? (
+                          {report?.status === "completed" ? (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-600 border border-green-200/50">
                               <i className="fas fa-check-circle mr-1.5 text-[10px]" /> 已完成
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200/50">
-                              <i className="fas fa-spinner fa-spin mr-1.5 text-[10px]" /> {report.progress}%
+                              <i className="fas fa-spinner fa-spin mr-1.5 text-[10px]" /> {report?.progress ?? 0}%
                             </span>
                           )}
                         </div>
@@ -503,7 +461,8 @@ export default function DashboardPage() {
                         </div>
                       </div>
                     </Link>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>

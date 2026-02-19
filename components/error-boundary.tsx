@@ -31,23 +31,41 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: { componentStack: string }) {
+    const detail = `${error.name}: ${error.message}\n\n${error.stack ?? ""}\n\n组件堆栈:\n${errorInfo?.componentStack ?? ""}`
     console.error("Error caught by boundary:", error, errorInfo)
+    try {
+      sessionStorage.setItem("report_system_last_error", detail)
+    } catch {
+      // ignore
+    }
     this.setState({
       error,
       errorInfo,
     })
   }
 
-  handleReset = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    })
+  handleReload = () => {
+    window.location.reload()
+  }
+
+  /** 清除缓存并硬刷新（绕过浏览器缓存，重新拉取页面和脚本） */
+  handleHardReload = () => {
+    try {
+      sessionStorage.removeItem("report_system_last_error")
+      // 使用带时间戳的当前地址强制跳过缓存
+      const url = new URL(window.location.href)
+      url.searchParams.set("_", String(Date.now()))
+      window.location.href = url.toString()
+    } catch {
+      window.location.reload()
+    }
   }
 
   render() {
     if (this.state.hasError) {
+      const msg = this.state.error?.message ?? ""
+      const isLikelyStaleBuild = /featuredOnly|is not defined|ReferenceError/i.test(msg)
+
       return (
         this.props.fallback || (
           <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -64,33 +82,67 @@ export class ErrorBoundary extends Component<Props, State> {
                   系统遇到了一个错误，请稍后重试。
                 </p>
 
-                {this.state.error && (
-                  <details className="mb-6 text-xs">
-                    <summary className="cursor-pointer text-slate-500 hover:text-slate-700 font-medium">
-                      错误详情
-                    </summary>
-                    <pre className="mt-2 p-3 bg-slate-50 rounded border border-slate-200 overflow-auto max-h-40 text-slate-700">
-                      {this.state.error.toString()}
-                      {this.state.errorInfo?.componentStack}
-                    </pre>
-                  </details>
+                {isLikelyStaleBuild && (
+                  <div className="text-left text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 mb-4">
+                    <p className="font-semibold mb-1">常见原因：当前运行的是旧版构建或缓存未更新。</p>
+                    <p className="mb-2">请在本机项目目录执行：<strong>删除 <code className="bg-amber-100 px-1 rounded">.next</code> 文件夹</strong>，然后重新运行 <code className="bg-amber-100 px-1 rounded">pnpm dev</code> 或 <code className="bg-amber-100 px-1 rounded">pnpm build</code>。再从 GitHub 拉取最新代码后重试。</p>
+                    <p>然后点击下方「清除缓存并硬刷新」。</p>
+                  </div>
                 )}
 
-                <div className="flex gap-3">
+                <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                  请确认：浏览器地址与终端里显示的 <strong>Local</strong> 一致（例如 <code className="bg-white px-1 rounded">http://127.0.0.1:3000</code> 或 <code className="bg-white px-1 rounded">3001</code>）。端口不对会白屏或报错。
+                </p>
+
+                {this.state.error && (
+                  <div className="mb-6">
+                    <p className="text-xs font-semibold text-slate-700 mb-2">请把下面这段错误信息复制发给我们，便于排查：</p>
+                    <pre className="p-3 bg-red-50 border border-red-200 rounded-lg overflow-auto max-h-48 text-xs text-slate-800 whitespace-pre-wrap">
+                      {this.state.error.name}: {this.state.error.message}
+                      {this.state.error.stack ? `\n\n${this.state.error.stack}` : ""}
+                      {this.state.errorInfo?.componentStack ? `\n\n组件堆栈:\n${this.state.errorInfo.componentStack}` : ""}
+                    </pre>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `${this.state.error?.name}: ${this.state.error?.message}\n${this.state.error?.stack ?? ""}\n${this.state.errorInfo?.componentStack ?? ""}`
+                        void navigator.clipboard?.writeText(text).then(() => alert("已复制到剪贴板"))
+                      }}
+                      className="mt-2 w-full py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
+                    >
+                      复制错误信息
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 mb-3">
                   <button
-                    onClick={this.handleReset}
-                    className="flex-1 px-4 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
-                    aria-label="重新加载页面"
+                    onClick={this.handleHardReload}
+                    type="button"
+                    className="w-full px-4 py-2.5 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors"
+                    aria-label="清除缓存并硬刷新"
                   >
-                    重新加载
+                    <i className="fas fa-sync-alt mr-1.5" />
+                    清除缓存并硬刷新
                   </button>
-                  <button
-                    onClick={() => window.location.href = "/dashboard"}
-                    className="flex-1 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 transition-colors"
-                    aria-label="返回仪表板"
-                  >
-                    返回首页
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={this.handleReload}
+                      type="button"
+                      className="flex-1 px-4 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                      aria-label="重新加载页面"
+                    >
+                      重新加载
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { window.location.href = "/" }}
+                      className="flex-1 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 transition-colors"
+                      aria-label="返回仪表板"
+                    >
+                      返回首页
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-center text-xs text-slate-400 mt-4">

@@ -1,6 +1,6 @@
 /**
- * 外部数据源：RapidAPI（亚马逊）、ScrapingBee（网页）、Serper（搜索）、YouTube（搜索+字幕）
- * 根据产品信息提取关键词 → 搜索参考网站与 YouTube 视频 → 抓取内容/字幕供报告生成。
+ * 外部数据源：RapidAPI（亚马逊）、ScrapingBee（网页 + Google 搜索 + YouTube）、Serper（可选）
+ * 仅配置 SCRAPINGBEE_API_KEY 即可完成：参考网站搜索、网页抓取、YouTube 搜索与字幕；Serper 为可选备选。
  */
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY
@@ -9,7 +9,6 @@ const RAPIDAPI_AMAZON_PATH = process.env.RAPIDAPI_AMAZON_PATH || "product-detail
 const RAPIDAPI_REVIEWS_PATH = "product-reviews"
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY
 const SERPER_API_KEY = process.env.SERPER_API_KEY
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || process.env.YOUTUBE_API_KEY
 
 /** 单条评论在 API 返回中的可能字段（不同 API 版本可能不同） */
 function reviewToText(review: unknown): string {
@@ -201,7 +200,26 @@ export function extractProductSearchQuery(productsInfoText: string): string {
   return ""
 }
 
-/** Serper 搜索（Google），返回有机结果链接。需配置 SERPER_API_KEY */
+/** ScrapingBee Google Search API，返回有机结果链接。需配置 SCRAPINGBEE_API_KEY */
+export async function searchWebUrlsWithScrapingBeeGoogle(query: string, num: number = 10): Promise<string[]> {
+  if (!SCRAPINGBEE_API_KEY || !query.trim()) return []
+  try {
+    const apiUrl = `https://app.scrapingbee.com/api/v1/store/google?api_key=${encodeURIComponent(SCRAPINGBEE_API_KEY)}&search=${encodeURIComponent(query.trim().slice(0, 200))}&search_type=classic`
+    const res = await fetch(apiUrl)
+    if (!res.ok) return []
+    const data = (await res.json()) as Record<string, unknown>
+    const organic = Array.isArray(data?.organic_results) ? (data.organic_results as Array<Record<string, unknown>>) : []
+    const links = organic
+      .slice(0, Math.min(20, Math.max(1, num)))
+      .map((o) => o.url)
+      .filter((u): u is string => typeof u === "string" && u.startsWith("http"))
+    return links
+  } catch {
+    return []
+  }
+}
+
+/** Serper 搜索（Google），返回有机结果链接。需配置 SERPER_API_KEY（可选，与 ScrapingBee 二选一即可） */
 export async function searchWebUrlsWithSerper(query: string, num: number = 10): Promise<string[]> {
   if (!SERPER_API_KEY || !query.trim()) return []
   try {
@@ -222,21 +240,34 @@ export async function searchWebUrlsWithSerper(query: string, num: number = 10): 
   }
 }
 
+/** 搜索参考网站链接：优先 ScrapingBee Google，无则用 Serper。任一 API key 即可。 */
+export async function searchWebUrls(query: string, num: number = 10): Promise<string[]> {
+  if (SCRAPINGBEE_API_KEY) {
+    const urls = await searchWebUrlsWithScrapingBeeGoogle(query, num)
+    if (urls.length > 0) return urls
+  }
+  if (SERPER_API_KEY) return searchWebUrlsWithSerper(query, num)
+  return []
+}
+
 export type YouTubeSearchItem = { videoId: string; title: string; url: string }
 
-/** YouTube Data API v3 按关键词搜索视频。需配置 GOOGLE_API_KEY 或 YOUTUBE_API_KEY */
+/** 通过 ScrapingBee YouTube Search API 按关键词搜索视频。需配置 SCRAPINGBEE_API_KEY */
 export async function searchYouTubeVideos(query: string, maxResults: number = 10): Promise<YouTubeSearchItem[]> {
-  if (!GOOGLE_API_KEY || !query.trim()) return []
+  if (!SCRAPINGBEE_API_KEY || !query.trim()) return []
   try {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query.trim().slice(0, 100))}&maxResults=${Math.min(20, Math.max(1, maxResults))}&key=${GOOGLE_API_KEY}`
-    const res = await fetch(url)
+    const apiUrl = `https://app.scrapingbee.com/api/v1/youtube/search?api_key=${encodeURIComponent(SCRAPINGBEE_API_KEY)}&search=${encodeURIComponent(query.trim().slice(0, 100))}&type=video`
+    const res = await fetch(apiUrl)
     if (!res.ok) return []
-    const data = (await res.json()) as { items?: Array<{ id?: { videoId?: string }; snippet?: { title?: string } }> }
+    const data = (await res.json()) as Record<string, unknown>
+    const results = Array.isArray(data?.results) ? (data.results as Record<string, unknown>[]) : []
     const items: YouTubeSearchItem[] = []
-    for (const item of data.items ?? []) {
-      const videoId = item.id?.videoId
-      const title = item.snippet?.title ?? ""
-      if (videoId) items.push({ videoId, title, url: `https://www.youtube.com/watch?v=${videoId}` })
+    for (const r of results) {
+      if (items.length >= Math.min(20, Math.max(1, maxResults))) break
+      const videoId = extractVideoId(r)
+      if (!videoId) continue
+      const title = extractTitle(r)
+      items.push({ videoId, title, url: `https://www.youtube.com/watch?v=${videoId}` })
     }
     return items
   } catch {
@@ -244,8 +275,42 @@ export async function searchYouTubeVideos(query: string, maxResults: number = 10
   }
 }
 
-/** 抓取单个 YouTube 视频字幕并合并为纯文本（使用 youtube-transcript） */
+/** 从 ScrapingBee YouTube 搜索结果条目中提取 videoId */
+function extractVideoId(r: Record<string, unknown>): string | null {
+  if (typeof r.videoId === "string") return r.videoId
+  const nav = r.navigationEndpoint as Record<string, unknown> | undefined
+  const vid = (nav?.watchEndpoint as Record<string, unknown>)?.videoId
+  if (typeof vid === "string") return vid
+  const inline = r.inlinePlaybackEndpoint as Record<string, unknown> | undefined
+  const vid2 = (inline?.watchEndpoint as Record<string, unknown>)?.videoId
+  if (typeof vid2 === "string") return vid2
+  return null
+}
+
+/** 从 ScrapingBee YouTube 搜索结果条目中提取视频标题 */
+function extractTitle(r: Record<string, unknown>): string {
+  const titleObj = r.title as Record<string, unknown> | undefined
+  if (!titleObj) return ""
+  if (typeof titleObj.simpleText === "string") return titleObj.simpleText
+  if (Array.isArray(titleObj.runs)) {
+    return (titleObj.runs as Array<Record<string, unknown>>).map((run) => (typeof run.text === "string" ? run.text : "")).join("")
+  }
+  return ""
+}
+
+/** 抓取单个 YouTube 视频字幕：优先 ScrapingBee Transcript API，fallback 到 youtube-transcript 包 */
 export async function fetchYouTubeTranscript(videoId: string): Promise<string> {
+  if (SCRAPINGBEE_API_KEY) {
+    try {
+      const apiUrl = `https://app.scrapingbee.com/api/v1/youtube/transcript?api_key=${encodeURIComponent(SCRAPINGBEE_API_KEY)}&video_id=${encodeURIComponent(videoId)}`
+      const res = await fetch(apiUrl)
+      if (res.ok) {
+        const data = (await res.json()) as unknown
+        const text = parseTranscriptResponse(data)
+        if (text) return text.slice(0, 15000)
+      }
+    } catch { /* fall through to npm fallback */ }
+  }
   try {
     const { YoutubeTranscript } = await import("youtube-transcript")
     const list = await YoutubeTranscript.fetchTranscript(videoId)
@@ -257,7 +322,23 @@ export async function fetchYouTubeTranscript(videoId: string): Promise<string> {
   }
 }
 
-/** 根据产品关键词搜索参考网站并抓取内容；若无 Serper 则返回空 */
+/** 解析 ScrapingBee Transcript API 返回的多种可能格式 */
+function parseTranscriptResponse(data: unknown): string {
+  if (typeof data === "string") return data.trim()
+  if (Array.isArray(data)) {
+    return data.map((t) => (typeof t === "string" ? t : typeof t === "object" && t != null && "text" in t ? String((t as Record<string, unknown>).text) : "")).filter(Boolean).join(" ").trim()
+  }
+  if (typeof data === "object" && data != null) {
+    const obj = data as Record<string, unknown>
+    if (typeof obj.text === "string") return obj.text.trim()
+    if (Array.isArray(obj.transcript)) return parseTranscriptResponse(obj.transcript)
+    if (Array.isArray(obj.captions)) return parseTranscriptResponse(obj.captions)
+    if (Array.isArray(obj.segments)) return parseTranscriptResponse(obj.segments)
+  }
+  return ""
+}
+
+/** 根据产品关键词搜索参考网站并抓取内容；需 ScrapingBee 或 Serper 任一 API key */
 export async function fetchReferenceWebContentByKeyword(
   productsInfoText: string,
   websiteCount: number,
@@ -277,7 +358,7 @@ export async function fetchReferenceWebContentByKeywordExtended(
 ): Promise<{ combined: string; items: WebSourceItem[] }> {
   const query = extractProductSearchQuery(productsInfoText)
   if (!query) return { combined: "", items: [] }
-  const urls = await searchWebUrlsWithSerper(query, options?.maxUrls ?? websiteCount)
+  const urls = await searchWebUrls(query, options?.maxUrls ?? websiteCount)
   if (urls.length === 0) return { combined: "", items: [] }
   const maxUrls = Math.min(options?.maxUrls ?? Math.min(15, websiteCount), urls.length)
   const maxPerUrl = options?.maxPerUrl ?? 5000
@@ -320,7 +401,7 @@ export async function fetchReferenceYouTubeTranscriptByKeywordExtended(
   youtubeCount: number
 ): Promise<{ combined: string; items: YouTubeSourceItem[] }> {
   const query = extractProductSearchQuery(productsInfoText)
-  if (!query || !GOOGLE_API_KEY) return { combined: "", items: [] }
+  if (!query || !SCRAPINGBEE_API_KEY) return { combined: "", items: [] }
   const videos = await searchYouTubeVideos(`${query} review comparison`, Math.min(15, youtubeCount))
   if (videos.length === 0) return { combined: "", items: [] }
   const items: YouTubeSourceItem[] = []

@@ -409,12 +409,11 @@ export async function POST(request: NextRequest) {
                             const lines = buffer.split("\n")
                             buffer = lines.pop() || ""
 
+                            let upstreamDone = false
                             for (const line of lines) {
                                 const trimmed = line.trim()
                                 if (!trimmed || trimmed === "data: [DONE]") {
-                                    if (trimmed === "data: [DONE]") {
-                                        controller.enqueue(encoder.encode("data: [DONE]\n\n"))
-                                    }
+                                    if (trimmed === "data: [DONE]") upstreamDone = true
                                     continue
                                 }
 
@@ -433,8 +432,10 @@ export async function POST(request: NextRequest) {
                                     }
                                 }
                             }
+                            if (upstreamDone) break
                         }
 
+                        if (upstreamDone) break
                         if (buffer.trim()) {
                             const trimmed = buffer.trim()
                             if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {

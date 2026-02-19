@@ -16,8 +16,8 @@ export default function HomePage() {
       <div className="relative max-w-3xl w-full text-center">
         {/* Hero Section */}
         <div className="mb-10">
-          <div className="w-16 h-16 bg-gradient-to-br from-primary to-purple mx-auto mb-5 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
-            <i className="fas fa-brain text-white text-3xl"></i>
+          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl flex items-center justify-center shadow-lg overflow-hidden">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-5xl md:text-7xl font-bold mb-3 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
             智能报告生成系统
