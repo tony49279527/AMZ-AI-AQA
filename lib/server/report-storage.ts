@@ -5,8 +5,17 @@ import path from "path"
 export const REPORT_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/
 const REPORT_FILE_REGEX = /^report_([a-zA-Z0-9_-]{1,64})\.md$/
 
+/** 报告目录：优先用当前目录下的 content/reports；若不存在则尝试 report-generation-system/content/reports（从上级目录启动时） */
 export function getReportsDir(): string {
-  return path.join(process.cwd(), "content", "reports")
+  const cwd = process.cwd()
+  const primary = path.join(cwd, "content", "reports")
+  if (fs.existsSync(primary)) return primary
+  const fallback = path.join(cwd, "report-generation-system", "content", "reports")
+  if (fs.existsSync(fallback)) return fallback
+  // 从上级目录启动且子目录存在时，新建报告也放到子目录里，避免数据分散
+  const subDir = path.join(cwd, "report-generation-system")
+  if (fs.existsSync(subDir)) return fallback
+  return primary
 }
 
 export function ensureReportsDir(): string {

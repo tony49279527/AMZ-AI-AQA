@@ -43,6 +43,13 @@ export default function NewReportPage() {
     }
   }, [logs.length])
 
+  // 页面卸载时取消正在进行的生成请求
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
+
   // Form state
   const [coreAsins, setCoreAsins] = useState("")
   const [competitorAsins, setCompetitorAsins] = useState("")

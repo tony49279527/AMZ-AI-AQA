@@ -59,8 +59,6 @@ export default function DashboardPage() {
 
   const [recentReports, setRecentReports] = useState<Report[]>([])
   const [loadError, setLoadError] = useState("")
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
 
   // 从 API 加载真实报告列表
   useEffect(() => {
@@ -81,7 +79,7 @@ export default function DashboardPage() {
             createdAt: new Date(r.createdAt as string),
             updatedAt: new Date(r.updatedAt as string),
             archivedStatus: r.archivedStatus,
-            source: r.source === "uploaded" ? "uploaded" : "system",
+            source: r.source === "uploaded" ? "uploaded" : r.source === "featured" ? "featured" : "system",
           }))
         )
       } catch (error) {
@@ -100,7 +98,7 @@ export default function DashboardPage() {
     { id: "featured", label: "精选报告" },
   ]
 
-  const featuredReports = useMemo(() => (recentReports ?? []).filter(r => r.source === "uploaded"), [recentReports])
+  const featuredReports = useMemo(() => (recentReports ?? []).filter(r => r.source === "featured" || r.source === "uploaded"), [recentReports])
   const myReports = useMemo(() => (recentReports ?? []).filter(r => r.source === "system"), [recentReports])
 
   const sortFn = useMemo(() => (a: Report, b: Report) => {
@@ -194,12 +192,6 @@ export default function DashboardPage() {
 
       <main className="pt-24 pb-16">
         <div className="max-w-[1280px] mx-auto px-6">
-          {/* 端口提示：地址栏必须和终端 Local 一致，否则报告列表来自别的进程 */}
-          {mounted && (
-            <p className="mb-4 text-xs text-slate-500 bg-amber-50/80 border border-amber-200/80 rounded-lg px-3 py-2">
-              当前地址：<strong>{window.location.origin}</strong> — 请与终端里显示的 <strong>Local</strong> 一致（例如 3000 或 3001），端口不对会导致报告数量不对。
-            </p>
-          )}
           {/* 筛选与操作栏 */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div className="flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200 shadow-sm w-fit">

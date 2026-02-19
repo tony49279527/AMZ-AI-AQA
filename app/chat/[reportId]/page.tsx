@@ -24,6 +24,11 @@ interface ChatSession {
   updatedAt: string
 }
 
+function formatSessionDate(updatedAt: string): string {
+  const d = new Date(updatedAt)
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("zh-CN")
+}
+
 export default function ChatPage() {
   const params = useParams()
   const router = useRouter()
@@ -34,7 +39,7 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
+  const [showHistory, setShowHistory] = useState(true)
   const [showContext, setShowContext] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -740,7 +745,7 @@ export default function ChatPage() {
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
                       <i className="far fa-clock text-[9px] opacity-70" />
-                      {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                      {formatSessionDate(session.updatedAt)}
                     </div>
                   </div>
                 ))}
@@ -806,7 +811,7 @@ export default function ChatPage() {
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
                           <i className="far fa-clock text-[9px] opacity-70" />
-                          {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                          {formatSessionDate(session.updatedAt)}
                         </div>
                       </div>
                     ))}

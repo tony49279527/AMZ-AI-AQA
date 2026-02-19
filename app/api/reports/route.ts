@@ -3,7 +3,7 @@ import fs from "fs"
 import path from "path"
 import { enforceApiGuard } from "@/lib/server/api-guard"
 import { apiError, withApiAudit } from "@/lib/server/api-response"
-import { getReportFilePath, getReportMetaFilePath, parseReportIdFromFilename } from "@/lib/server/report-storage"
+import { getReportFilePath, getReportMetaFilePath, getReportsDir, parseReportIdFromFilename } from "@/lib/server/report-storage"
 import { ReportMetadata } from "@/lib/report-metadata"
 
 // 扫描 content/reports/ 目录，提取报告元数据
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
         if (guardError) return guardError
 
         try {
-            const reportsDir = path.join(process.cwd(), "content", "reports")
+            const reportsDir = getReportsDir()
 
             if (!fs.existsSync(reportsDir)) {
                 return NextResponse.json({ reports: [] })
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
                         }
                     }
 
-                    const source = (meta.source === "uploaded" || meta.source === "featured") ? "uploaded" : "system"
+                    const source = meta.source === "uploaded" ? "uploaded" : meta.source === "featured" ? "featured" : "system"
                     return {
                         id,
                         title: meta.title ?? id,

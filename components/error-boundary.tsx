@@ -91,7 +91,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 )}
 
                 <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-                  请确认：浏览器地址与终端里显示的 <strong>Local</strong> 一致（例如 <code className="bg-white px-1 rounded">http://127.0.0.1:3000</code> 或 <code className="bg-white px-1 rounded">3001</code>）。端口不对会白屏或报错。
+                  请确认用 <strong>http://localhost:3000</strong> 打开，且终端已出现 Local: http://127.0.0.1:3000 后再访问。端口不对会白屏或报错。
                 </p>
 
                 {this.state.error && (
