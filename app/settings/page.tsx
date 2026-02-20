@@ -46,6 +46,8 @@ type AppSettings = {
   }
 }
 
+type SettingsTab = "llm" | "agents" | "datasources" | "notifications" | "appearance"
+
 const defaultSettings: AppSettings = {
   llm: {
     defaultModel: DEFAULT_LLM_MODEL,
@@ -104,8 +106,32 @@ function mergeSettings(partial: Partial<AppSettings>): AppSettings {
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [activeTab, setActiveTab] = useState<SettingsTab>("llm")
   const [saved, setSaved] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const tabScopeHints: Record<SettingsTab, { label: string; detail: string }> = {
+    llm: {
+      label: "部分生效",
+      detail: "仅“默认模型”会影响新建报告与智能问答；其余参数为预留项。",
+    },
+    agents: {
+      label: "预留项",
+      detail: "当前版本未接入 Agent 章节开关与优先级，不影响实际生成结果。",
+    },
+    datasources: {
+      label: "预留项",
+      detail: "当前版本的数据源密钥以服务端 .env 为准，本页不写入后端配置。",
+    },
+    notifications: {
+      label: "预留项",
+      detail: "当前版本不会实际发送邮件或 Webhook，本页仅保留配置占位。",
+    },
+    appearance: {
+      label: "预留项",
+      detail: "当前版本未接入全局主题/紧凑模式切换，本页设置暂不影响界面。",
+    },
+  }
 
   useEffect(() => {
     try {
@@ -152,11 +178,11 @@ export default function SettingsPage() {
           </h1>
           <p className="text-xl text-muted-foreground">System Settings & Configuration</p>
           <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-            <strong>说明：</strong>本页设置仅部分影响后端。报告生成与智能问答使用的 API Key 由服务端环境变量 <code className="bg-amber-100 px-1 rounded">OPENROUTER_API_KEY</code> 提供，请在项目根目录 <code className="bg-amber-100 px-1 rounded">.env</code> 或部署环境变量中配置，请勿在界面中填写。Agent 开关会控制新建报告时生成哪些章节；LLM 默认模型会用于新建报告与智能问答。
+            <strong>说明：</strong>当前版本仅“默认模型”会直接影响新建报告与智能问答。报告生成与问答的 API Key 由服务端环境变量 <code className="bg-amber-100 px-1 rounded">OPENROUTER_API_KEY</code> 提供，请在项目根目录 <code className="bg-amber-100 px-1 rounded">.env</code> 或部署环境变量中配置。
           </div>
         </div>
 
-        <Tabs defaultValue="llm" className="w-full">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SettingsTab)} className="w-full">
           <TabsList className="mb-6 bg-card border border-border p-1">
             <TabsTrigger
               value="llm"
@@ -195,6 +221,15 @@ export default function SettingsPage() {
             </TabsTrigger>
           </TabsList>
 
+          <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <div className="font-semibold">
+              生效范围：{tabScopeHints[activeTab].label}
+            </div>
+            <div className="mt-1 text-blue-700">
+              {tabScopeHints[activeTab].detail}
+            </div>
+          </div>
+
           {/* LLM Settings */}
           <TabsContent value="llm">
             <Card className="p-8 bg-card border-border">
@@ -203,7 +238,7 @@ export default function SettingsPage() {
               <div className="space-y-6 max-w-2xl">
                 <div>
                   <Label htmlFor="default-model" className="text-base mb-3 block">
-                    默认模型
+                    默认模型 <span className="text-xs text-emerald-600 font-medium">（已生效）</span>
                   </Label>
                   <Select
                     value={settings.llm.defaultModel}
@@ -227,21 +262,21 @@ export default function SettingsPage() {
 
                 <div>
                   <Label htmlFor="api-key" className="text-base mb-3 block">
-                    API密钥
+                    API密钥 <span className="text-xs text-slate-500 font-medium">（预留）</span>
                   </Label>
                   <Input
                     id="api-key"
                     type="password"
                     value={settings.llm.apiKey}
-                    onChange={(e) => setSettings({ ...settings, llm: { ...settings.llm, apiKey: e.target.value } })}
-                    className="bg-secondary/50 font-mono"
+                    disabled
+                    className="bg-secondary/40 font-mono text-slate-400 cursor-not-allowed"
                   />
-                  <p className="text-sm text-muted-foreground mt-2">OpenAI或其他LLM提供商的API密钥</p>
+                  <p className="text-sm text-muted-foreground mt-2">请在服务端环境变量中配置，本输入框不写入后端。</p>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <Label className="text-base">Temperature</Label>
+                    <Label className="text-base">Temperature <span className="text-xs text-slate-500 font-medium">（预留）</span></Label>
                     <span className="text-sm font-semibold text-primary">{settings.llm.temperature}</span>
                   </div>
                   <Slider
@@ -249,19 +284,20 @@ export default function SettingsPage() {
                     onValueChange={([value]) =>
                       setSettings({ ...settings, llm: { ...settings.llm, temperature: value } })
                     }
+                    disabled
                     min={0}
                     max={2}
                     step={0.1}
                     className="w-full"
                   />
                   <p className="text-sm text-muted-foreground mt-2">
-                    控制输出的随机性。较低的值使输出更确定，较高的值更有创意
+                    当前版本由服务端固定参数控制，此项暂不生效。
                   </p>
                 </div>
 
                 <div>
                   <Label htmlFor="max-tokens" className="text-base mb-3 block">
-                    最大Token数
+                    最大Token数 <span className="text-xs text-slate-500 font-medium">（预留）</span>
                   </Label>
                   <Input
                     id="max-tokens"
@@ -270,9 +306,10 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setSettings({ ...settings, llm: { ...settings.llm, maxTokens: Number.parseInt(e.target.value) || 4096 } })
                     }
-                    className="bg-secondary/50"
+                    disabled
+                    className="bg-secondary/40 text-slate-400 cursor-not-allowed"
                   />
-                  <p className="text-sm text-muted-foreground mt-2">单次生成的最大token数量</p>
+                  <p className="text-sm text-muted-foreground mt-2">当前版本由服务端统一控制上限，此项暂不生效。</p>
                 </div>
               </div>
             </Card>
@@ -282,6 +319,7 @@ export default function SettingsPage() {
           <TabsContent value="agents">
             <Card className="p-8 bg-card border-border">
               <h2 className="text-2xl font-bold mb-6">Agent 参数配置</h2>
+              <p className="text-sm text-muted-foreground mb-6">预留功能：当前版本暂不参与报告生成流程。</p>
 
               <div className="space-y-4">
                 {Object.entries(settings.agents).map(([key, config]) => (
@@ -290,6 +328,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-4">
                         <Switch
                           checked={config.enabled}
+                          disabled
                           onCheckedChange={(checked) =>
                             setSettings({
                               ...settings,
@@ -313,6 +352,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-4">
                         <Select
                           value={config.priority}
+                          disabled
                           onValueChange={(value) =>
                             setSettings({
                               ...settings,
@@ -359,6 +399,7 @@ export default function SettingsPage() {
           <TabsContent value="datasources">
             <Card className="p-8 bg-card border-border">
               <h2 className="text-2xl font-bold mb-6">外部数据源配置</h2>
+              <p className="text-sm text-muted-foreground mb-6">预留功能：当前版本以服务端环境变量为准，本页不写入后端配置。</p>
 
               <div className="space-y-8 max-w-2xl">
                 {/* YouTube */}
@@ -375,6 +416,7 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={settings.dataSources.youtubeEnabled}
+                      disabled
                       onCheckedChange={(checked) =>
                         setSettings({
                           ...settings,
@@ -392,13 +434,8 @@ export default function SettingsPage() {
                         id="youtube-key"
                         type="password"
                         value={settings.dataSources.youtubeApiKey}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            dataSources: { ...settings.dataSources, youtubeApiKey: e.target.value },
-                          })
-                        }
-                        className="bg-secondary/50 font-mono"
+                        disabled
+                        className="bg-secondary/40 font-mono text-slate-400 cursor-not-allowed"
                       />
                     </div>
                   )}
@@ -418,6 +455,7 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={settings.dataSources.amazonEnabled}
+                      disabled
                       onCheckedChange={(checked) =>
                         setSettings({
                           ...settings,
@@ -435,13 +473,8 @@ export default function SettingsPage() {
                         id="amazon-key"
                         type="password"
                         value={settings.dataSources.amazonApiKey}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            dataSources: { ...settings.dataSources, amazonApiKey: e.target.value },
-                          })
-                        }
-                        className="bg-secondary/50 font-mono"
+                        disabled
+                        className="bg-secondary/40 font-mono text-slate-400 cursor-not-allowed"
                       />
                     </div>
                   )}
@@ -454,6 +487,7 @@ export default function SettingsPage() {
           <TabsContent value="notifications">
             <Card className="p-8 bg-card border-border">
               <h2 className="text-2xl font-bold mb-6">通知设置</h2>
+              <p className="text-sm text-muted-foreground mb-6">预留功能：当前版本不会实际发送邮件或 Webhook。</p>
 
               <div className="space-y-8 max-w-2xl">
                 {/* Email Notifications */}
@@ -465,6 +499,7 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={settings.notifications.emailEnabled}
+                      disabled
                       onCheckedChange={(checked) =>
                         setSettings({
                           ...settings,
@@ -482,13 +517,8 @@ export default function SettingsPage() {
                         id="email"
                         type="email"
                         value={settings.notifications.email}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            notifications: { ...settings.notifications, email: e.target.value },
-                          })
-                        }
-                        className="bg-secondary/50"
+                        disabled
+                        className="bg-secondary/40 text-slate-400 cursor-not-allowed"
                       />
                     </div>
                   )}
@@ -503,6 +533,7 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={settings.notifications.webhookEnabled}
+                      disabled
                       onCheckedChange={(checked) =>
                         setSettings({
                           ...settings,
@@ -520,14 +551,9 @@ export default function SettingsPage() {
                         id="webhook"
                         type="url"
                         value={settings.notifications.webhookUrl}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            notifications: { ...settings.notifications, webhookUrl: e.target.value },
-                          })
-                        }
+                        disabled
                         placeholder="https://your-webhook-url.com/callback"
-                        className="bg-secondary/50 font-mono"
+                        className="bg-secondary/40 font-mono text-slate-400 cursor-not-allowed"
                       />
                     </div>
                   )}
@@ -540,6 +566,7 @@ export default function SettingsPage() {
           <TabsContent value="appearance">
             <Card className="p-8 bg-card border-border">
               <h2 className="text-2xl font-bold mb-6">外观设置</h2>
+              <p className="text-sm text-muted-foreground mb-6">预留功能：当前版本未接入全局主题/紧凑模式切换。</p>
 
               <div className="space-y-8 max-w-2xl">
                 <div>
@@ -548,6 +575,7 @@ export default function SettingsPage() {
                   </Label>
                   <Select
                     value={settings.appearance.theme}
+                    disabled
                     onValueChange={(value) =>
                       setSettings({ ...settings, appearance: { ...settings.appearance, theme: value } })
                     }
@@ -571,6 +599,7 @@ export default function SettingsPage() {
                   </div>
                   <Switch
                     checked={settings.appearance.compactMode}
+                    disabled
                     onCheckedChange={(checked) =>
                       setSettings({
                         ...settings,

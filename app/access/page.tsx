@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import Link from "next/link"
 
 export default function AccessPage() {
   const [code, setCode] = useState("")
@@ -54,6 +55,11 @@ export default function AccessPage() {
             {loading ? "验证中…" : "进入"}
           </Button>
         </form>
+        <div className="text-center text-xs text-muted-foreground space-x-3">
+          <Link href="/login" className="hover:text-primary transition-colors">登录</Link>
+          <span>·</span>
+          <Link href="/register" className="hover:text-primary transition-colors">注册</Link>
+        </div>
       </div>
     </div>
   )

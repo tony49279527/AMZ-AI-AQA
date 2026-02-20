@@ -30,14 +30,41 @@ function getQaIntroSeenKey(reportId: string): string {
   return `qa_intro_seen_${reportId}`
 }
 
+function decodeJsonWrappedMarkdown(raw: string): string {
+  const trimmed = raw.trim()
+  if (!(trimmed.startsWith("\"") && trimmed.endsWith("\""))) return raw
+  try {
+    const parsed = JSON.parse(trimmed)
+    return typeof parsed === "string" ? parsed : raw
+  } catch {
+    return raw
+  }
+}
+
 /** 规范化报告 Markdown，减少模型输出导致的乱码与排版问题 */
 function normalizeReportMarkdown(raw: string): string {
-  return raw
+  const withDecodedJson = decodeJsonWrappedMarkdown(raw)
+  const withUnifiedNewline = withDecodedJson
+    .replace(/\uFEFF/g, "")
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
+
+  const escapedNewlineCount = (withUnifiedNewline.match(/\\r\\n|\\n/g) ?? []).length
+  const actualNewlineCount = (withUnifiedNewline.match(/\n/g) ?? []).length
+  const maybeEscapedMarkdown = escapedNewlineCount >= 3 && escapedNewlineCount > actualNewlineCount
+
+  const decodedEscapedNewline = maybeEscapedMarkdown
+    ? withUnifiedNewline
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+    : withUnifiedNewline
+
+  return decodedEscapedNewline
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim()
 }
 

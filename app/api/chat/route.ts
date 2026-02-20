@@ -400,6 +400,22 @@ export async function POST(request: NextRequest) {
                     let buffer = ""
 
                     try {
+                        const enqueueContentDelta = (line: string) => {
+                            if (!line.startsWith("data: ")) return
+                            const jsonStr = line.slice(6)
+                            try {
+                                const parsed = JSON.parse(jsonStr)
+                                const content = parsed.choices?.[0]?.delta?.content
+                                if (content) {
+                                    controller.enqueue(
+                                        encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
+                                    )
+                                }
+                            } catch {
+                                // ignore parse error from upstream chunk
+                            }
+                        }
+
                         let upstreamDone = false
                         while (!upstreamDone) {
                             const { done, value } = await reader.read()
@@ -417,39 +433,16 @@ export async function POST(request: NextRequest) {
                                     upstreamDone = true
                                     break
                                 }
-
-                                if (trimmed.startsWith("data: ")) {
-                                    const jsonStr = trimmed.slice(6)
-                                    try {
-                                        const parsed = JSON.parse(jsonStr)
-                                        const content = parsed.choices?.[0]?.delta?.content
-                                        if (content) {
-                                            controller.enqueue(
-                                                encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
-                                            )
-                                        }
-                                    } catch {
-                                        // ignore parse error from upstream chunk
-                                    }
-                                }
+                                enqueueContentDelta(trimmed)
                             }
+
+                            if (upstreamDone) continue
                         }
 
                         if (buffer.trim()) {
                             const trimmed = buffer.trim()
                             if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
-                                const jsonStr = trimmed.slice(6)
-                                try {
-                                    const parsed = JSON.parse(jsonStr)
-                                    const content = parsed.choices?.[0]?.delta?.content
-                                    if (content) {
-                                        controller.enqueue(
-                                            encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
-                                        )
-                                    }
-                                } catch {
-                                    // ignore parse error from trailing chunk
-                                }
+                                enqueueContentDelta(trimmed)
                             }
                         }
 

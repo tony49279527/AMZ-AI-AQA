@@ -55,6 +55,22 @@ export default function HomePage() {
               </Button>
             </Link>
           </div>
+
+          <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+            <Link href="/login" className="px-3 py-1.5 rounded-full border border-border hover:text-primary hover:border-primary/40 transition-colors">
+              已有账号登录
+            </Link>
+            <Link href="/register" className="px-3 py-1.5 rounded-full border border-border hover:text-primary hover:border-primary/40 transition-colors">
+              新用户注册
+            </Link>
+            <Link href="/access" className="px-3 py-1.5 rounded-full border border-border hover:text-primary hover:border-primary/40 transition-colors">
+              我有访问码
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-6 text-xs text-muted-foreground">
+          首次使用建议：先登录/注册，若系统启用了访问码，再输入访问码进入业务页面。
         </div>
 
         {/* Footer Links */}
