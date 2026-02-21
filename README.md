@@ -54,3 +54,4 @@ SCRAPINGBEE_API_KEY=your-scrapingbee-api-key
 
 - **单实例**：限流使用进程内内存，多实例部署时每实例独立计数；报告与 meta 存于 `content/reports/` 文件系统，无 DB、无备份。扩展时需引入 Redis 限流与数据库/对象存储。
 - **报告生成**：生成开始后当前无法由客户端取消；刷新或关闭页签后服务端仍会继续请求 LLM 并写文件。
+``
