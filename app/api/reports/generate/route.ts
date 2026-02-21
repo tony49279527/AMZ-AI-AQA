@@ -64,7 +64,7 @@ async function parseUploadedFileToText(file: File | null, noPlaceholder: string)
     // Excel：.xlsx 用 read-excel-file 解析为文本（xlsx 库有 CVE 漏洞，已替换）
     if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
         try {
-            const readXlsxFile = (await import("read-excel-file/node")).default
+            const readXlsxFile = (await import("read-excel-file")).default
             const rows = await readXlsxFile(Buffer.from(buf))
             const text = rows.map(row => row.map(cell => cell ?? "").join("\t")).join("\n")
             return (text && text.trim()) ? text.trim().slice(0, 500_000) : noPlaceholder
